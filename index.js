@@ -8,14 +8,13 @@ const {
     ActionRowBuilder, 
     ButtonBuilder, 
     ButtonStyle, 
-    PermissionFlagsBits, 
     AttachmentBuilder 
 } = require('discord.js');
 const fs = require('fs');
 
 // --- CONFIGURATION ---
 const TOKEN = process.env.DISCORD_TOKEN || "YOUR_BOT_TOKEN_HERE";
-const CLIENT_ID = process.env.CLIENT_ID || "YOUR_CLIENT_ID_HERE"; // Bot's Client ID for slash commands
+const CLIENT_ID = process.env.CLIENT_ID || "YOUR_CLIENT_ID_HERE";
 const PRIMARY_OWNER_ID = "123456789012345678"; // Replace with your main Discord User ID
 
 const ALLOWED_ROLE_IDS = [
@@ -117,7 +116,9 @@ const client = new Client({
 // --- REGISTER SLASH COMMANDS ---
 const commands = [
     new SlashCommandBuilder().setName('help').setDescription('Sends the Hyperion help panel'),
-    new SlashCommandBuilder().setName('daily').setDescription('Claim your daily credits'),
+    new SlashCommandBuilder().setName('daily').setDescription('Claim your daily credits (25 for normal, 100 for premium)'),
+    new SlashCommandBuilder().setName('balance').setDescription('Check your current credit balance'),
+    new SlashCommandBuilder().setName('leaderboard').setDescription('Shows the top 10 users with the most credits'),
     new SlashCommandBuilder()
         .setName('obfuscate')
         .setDescription('Obfuscates your Lua file or pasted code (Costs 2 credits)')
@@ -179,7 +180,7 @@ client.on('interactionCreate', async interaction => {
                 const remaining = Math.floor(cooldown - (currentTime - lastClaimed));
                 const hours = Math.floor(remaining / 3600);
                 const minutes = Math.floor((remaining % 3600) / 60);
-                await interaction.reply({ content: `⏳ You must wait **${hours}h${minutes}m** before claiming your daily credits again.`, ephemeral: true });
+                await interaction.reply({ content: `⏳ You must wait **{hours}h {minutes}m** before claiming your daily credits again.`.replace('{hours}', hours).replace('{minutes}', minutes), ephemeral: true });
                 return;
             }
 
@@ -190,7 +191,38 @@ client.on('interactionCreate', async interaction => {
             userData.users[userId].last_daily = currentTime;
             saveData(userData);
 
-            await interaction.reply({ content: `✅ You successfully claimed your daily **${reward} credits**!`, ephemeral: true });
+            await interaction.reply({ content: `✅ You successfully claimed your daily **{reward} credits**!`.replace('{reward}', reward), ephemeral: true });
+        }
+        else if (interaction.commandName === 'balance') {
+            const userData = getUser(userId);
+            const credits = userData.users[userId].credits;
+            await interaction.reply({ content: `💰 You currently have **{credits} credits**.`.replace('{credits}', credits), ephemeral: true });
+        }
+        else if (interaction.commandName === 'leaderboard') {
+            const users = data.users || {};
+            
+            // Sort users by credits in descending order (highest first)
+            const sortedUsers = Object.entries(users)
+                .sort(([, a], [, b]) => b.credits - a.credits)
+                .slice(0, 10); // Limit to top 10
+
+            let description = "";
+            if (sortedUsers.length === 0) {
+                description = "No users found on the leaderboard yet.";
+            } else {
+                let rank = 1;
+                for (const [uid, uData] of sortedUsers) {
+                    description += `${rank}. <@${uid}> Credits =${uData.credits}\n`;
+                    rank++;
+                }
+            }
+
+            const embed = new EmbedBuilder()
+                .setTitle("**LeaderBoard**")
+                .setDescription(description)
+                .setColor(0xffd700);
+
+            await interaction.reply({ embeds: [embed] });
         }
         else if (interaction.commandName === 'obfuscate' || interaction.commandName === 'minify') {
             const userData = getUser(userId);
@@ -240,10 +272,6 @@ client.on('interactionCreate', async interaction => {
         }
     } 
     else if (interaction.isButton()) {
-        // User-lock check for help menu buttons
-        // We look at the message reference or check if the interaction user matches the original invoker.
-        // A simple way is tracking user custom ID or checking interaction user.
-        // To make it strict, we can parse or check if the clicker wants to view it.
         const embed = new EmbedBuilder();
         if (interaction.customId === 'help_commands') {
             embed.setTitle("*** Help Menu***")
@@ -259,6 +287,7 @@ client.on('interactionCreate', async interaction => {
                  .setDescription("**Commands**\n" +
                                  ".credit <number> <user> : Gives a user credit\n" +
                                  ".blacklist <user> : Blacklits a user so they cant use the bot\n" +
+                                 ".unblacklist <user> : Unblacklists a user\n" +
                                  ".ping : Checks the ping of the bot\n" +
                                  ".premium <user> : Gives user premium improved daily now getting 100 credits from the /daily")
                  .setColor(0xffd700);
@@ -275,7 +304,7 @@ client.on('messageCreate', async message => {
     const args = message.content.slice(1).trim().split(/ +/);
     const command = args.shift().toLowerCase();
 
-    const ownerCommands = ['credit', 'blacklist', 'ping', 'premium'];
+    const ownerCommands = ['credit', 'blacklist', 'unblacklist', 'ping', 'premium'];
     if (ownerCommands.includes(command)) {
         if (!hasOwnerOrRole(message.member)) {
             await message.reply("❌ **Access Denied:** You do not have the required Role to run owner commands.");
@@ -286,7 +315,7 @@ client.on('messageCreate', async message => {
 
         if (command === 'ping') {
             const latency = Math.round(client.ws.ping);
-            await message.channel.send(`🏓 Pong! Latency: **{latency}ms**`.replace('{latency}', latency));
+            await message.channel.send(`🏓 Pong! Latency: **${latency}ms**`);
         }
         else if (command === 'credit') {
             const amount = parseInt(args[0]);
@@ -298,7 +327,7 @@ client.on('messageCreate', async message => {
             const userData = getUser(member.id);
             userData.users[member.id].credits += amount;
             saveData(userData);
-            await message.channel.send(`✅ Added **{amount} credits** to {user}.`.replace('{amount}', amount).replace('{user}', member.toString()));
+            await message.channel.send(`✅ Added **${amount} credits** to ${member.toString()}.`);
         }
         else if (command === 'blacklist') {
             const member = message.mentions.members.first();
@@ -308,15 +337,30 @@ client.on('messageCreate', async message => {
             }
             if (!data.blacklist) data.blacklist = [];
             const uid = member.id;
+            if (!data.blacklist.includes(uid)) {
+                data.blacklist.push(uid);
+                saveData(data);
+                await message.channel.send(`✅ Blacklisted ${member.toString()}.`);
+            } else {
+                await message.channel.send(`❌ ${member.toString()} is already blacklisted.`);
+            }
+        }
+        else if (command === 'unblacklist') {
+            const member = message.mentions.members.first();
+            if (!member) {
+                await message.channel.send("❌ Usage: `.unblacklist @user`");
+                return;
+            }
+            if (!data.blacklist) data.blacklist = [];
+            const uid = member.id;
             const index = data.blacklist.indexOf(uid);
             if (index > -1) {
                 data.blacklist.splice(index, 1);
-                await message.channel.send(`✅ Unblacklisted {user}.`.replace('{user}', member.toString()));
+                saveData(data);
+                await message.channel.send(`✅ Unblacklisted ${member.toString()}.`);
             } else {
-                data.blacklist.push(uid);
-                await message.channel.send(`✅ Blacklisted {user}.`.replace('{user}', member.toString()));
+                await message.channel.send(`❌ ${member.toString()} is not on the blacklist.`);
             }
-            saveData(data);
         }
         else if (command === 'premium') {
             const member = message.mentions.members.first();
@@ -329,10 +373,10 @@ client.on('messageCreate', async message => {
             const index = data.premium.indexOf(uid);
             if (index > -1) {
                 data.premium.splice(index, 1);
-                await message.channel.send(`❌ Removed premium status from {user}.`.replace('{user}', member.toString()));
+                await message.channel.send(`❌ Removed premium status from ${member.toString()}.`);
             } else {
                 data.premium.push(uid);
-                await message.channel.send(`👑 Granted premium status to {user} (Daily reward upgraded to 100 credits).`.replace('{user}', member.toString()));
+                await message.channel.send(`👑 Granted premium status to ${member.toString()} (Daily reward upgraded to 100 credits).`);
             }
             saveData(data);
         }
@@ -340,4 +384,4 @@ client.on('messageCreate', async message => {
 });
 
 client.login(TOKEN);
-        
+                                                                                                     
