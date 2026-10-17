@@ -23,17 +23,19 @@ const ALLOWED_ROLE_IDS = [
     "1552940976165888037"
 ];
 
+const PREMIUM_ROLE_ID = "1559111360615284806"; // Premium Role ID
+
 const DATA_FILE = "bot_data.json";
 
 // --- DATABASE HELPERS ---
 function loadData() {
     if (!fs.existsSync(DATA_FILE)) {
-        return { users: {}, blacklist: [], premium: [] };
+        return { users: {}, blacklist: [] };
     }
     try {
         return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
     } catch (e) {
-        return { users: {}, blacklist: [], premium: [] };
+        return { users: {}, blacklist: [] };
     }
 }
 
@@ -113,7 +115,7 @@ const client = new Client({
     ]
 });
 
-// --- REGISTER SLASH COMMANDS ---
+// --- REGISTER ALL SLASH COMMANDS ---
 const commands = [
     new SlashCommandBuilder().setName('help').setDescription('Sends the Hyperion help panel'),
     new SlashCommandBuilder().setName('daily').setDescription('Claim your daily credits (25 for normal, 100 for premium)'),
@@ -135,10 +137,11 @@ client.once('ready', async () => {
     console.log(`Logged in as ${client.user.tag}!`);
     const rest = new REST({ version: '10' }).setToken(TOKEN);
     try {
+        console.log('Registering slash commands...');
         await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
-        console.log('Successfully registered application slash commands.');
+        console.log('Successfully registered all application slash commands!');
     } catch (error) {
-        console.error(error);
+        console.error('Error registering slash commands:', error);
     }
 });
 
@@ -160,7 +163,9 @@ client.on('interactionCreate', async interaction => {
                                 "/Obfuscate : Obfuscates your file/pasted code\n" +
                                 "/Minify : Minifys your file/pasted code\n" +
                                 "/Help : sends this help panel \n" +
-                                "/Daily : Gives you 25 credits")
+                                "/Daily : Gives you 25 credits\n" +
+                                "/Balance : checks your credits\n" +
+                                "/Leaderboard : Shows a embed of the users that has the most credits")
                 .setColor(0x2f3136);
 
             const row = new ActionRowBuilder().addComponents(
@@ -180,31 +185,30 @@ client.on('interactionCreate', async interaction => {
                 const remaining = Math.floor(cooldown - (currentTime - lastClaimed));
                 const hours = Math.floor(remaining / 3600);
                 const minutes = Math.floor((remaining % 3600) / 60);
-                await interaction.reply({ content: `⏳ You must wait **{hours}h {minutes}m** before claiming your daily credits again.`.replace('{hours}', hours).replace('{minutes}', minutes), ephemeral: true });
+                await interaction.reply({ content: `⏳ You must wait **${hours}h${minutes}m** before claiming your daily credits again.`, ephemeral: true });
                 return;
             }
 
-            const isPremium = data.premium && data.premium.includes(userId);
-            const reward = isPremium ? 100 : 25;
+            const hasPremiumRole = interaction.member && interaction.member.roles.cache.has(PREMIUM_ROLE_ID);
+            const reward = hasPremiumRole ? 100 : 25;
 
             userData.users[userId].credits += reward;
             userData.users[userId].last_daily = currentTime;
             saveData(userData);
 
-            await interaction.reply({ content: `✅ You successfully claimed your daily **{reward} credits**!`.replace('{reward}', reward), ephemeral: true });
+            await interaction.reply({ content: `✅ You successfully claimed your daily **${reward} credits**!`, ephemeral: true });
         }
         else if (interaction.commandName === 'balance') {
             const userData = getUser(userId);
             const credits = userData.users[userId].credits;
-            await interaction.reply({ content: `💰 You currently have **{credits} credits**.`.replace('{credits}', credits), ephemeral: true });
+            await interaction.reply({ content: `💰 You currently have **${credits} credits**.`, ephemeral: true });
         }
         else if (interaction.commandName === 'leaderboard') {
             const users = data.users || {};
             
-            // Sort users by credits in descending order (highest first)
             const sortedUsers = Object.entries(users)
                 .sort(([, a], [, b]) => b.credits - a.credits)
-                .slice(0, 10); // Limit to top 10
+                .slice(0, 10);
 
             let description = "";
             if (sortedUsers.length === 0) {
@@ -279,7 +283,9 @@ client.on('interactionCreate', async interaction => {
                                  "/Obfuscate : Obfuscates your file/pasted code\n" +
                                  "/Minify : Minifys your file/pasted code\n" +
                                  "/Help : sends this help panel \n" +
-                                 "/Daily : Gives you 25 credits")
+                                 "/Daily : Gives you 25 credits\n" +
+                                 "/Balance : checks your credits\n" +
+                                 "/Leaderboard : Shows a embed of the users that has the most credits")
                  .setColor(0x2f3136);
             await interaction.update({ embeds: [embed] });
         } else if (interaction.customId === 'help_owner') {
@@ -368,20 +374,21 @@ client.on('messageCreate', async message => {
                 await message.channel.send("❌ Usage: `.premium @user`");
                 return;
             }
-            if (!data.premium) data.premium = [];
-            const uid = member.id;
-            const index = data.premium.indexOf(uid);
-            if (index > -1) {
-                data.premium.splice(index, 1);
-                await message.channel.send(`❌ Removed premium status from ${member.toString()}.`);
-            } else {
-                data.premium.push(uid);
-                await message.channel.send(`👑 Granted premium status to ${member.toString()} (Daily reward upgraded to 100 credits).`);
+            
+            try {
+                if (member.roles.cache.has(PREMIUM_ROLE_ID)) {
+                    await member.roles.remove(PREMIUM_ROLE_ID);
+                    await message.channel.send(`❌ Removed Premium role <@&${PREMIUM_ROLE_ID}> from ${member.toString()}.`);
+                } else {
+                    await member.roles.add(PREMIUM_ROLE_ID);
+                    await message.channel.send(`👑 Granted Premium role <@&${PREMIUM_ROLE_ID}> to ${member.toString()}! (Daily reward upgraded to 100 credits).`);
+                }
+            } catch (err) {
+                console.error("Error giving role:", err);
+                await message.channel.send("❌ Failed to modify user roles. Make sure the bot's role is positioned ABOVE the Premium role in Server Settings -> Roles!");
             }
-            saveData(data);
         }
     }
 });
 
 client.login(TOKEN);
-                                                                                                     
