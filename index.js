@@ -111,6 +111,11 @@ const commands = [
     new SlashCommandBuilder().setName('balance').setDescription('Check your current credit balance'),
     new SlashCommandBuilder().setName('leaderboard').setDescription('Shows the top 10 users with the most credits'),
     new SlashCommandBuilder()
+        .setName('transfer')
+        .setDescription('Transfer credits to another user')
+        .addIntegerOption(option => option.setName('amount').setDescription('Amount of credits to transfer').setRequired(true))
+        .addUserOption(option => option.setName('user').setDescription('User to receive the credits').setRequired(true)),
+    new SlashCommandBuilder()
         .setName('obfuscate')
         .setDescription('Obfuscates your file or pasted code (Costs 2 credits)')
         .addStringOption(option => option.setName('code').setDescription('Pasted Lua code').setRequired(false))
@@ -154,6 +159,7 @@ client.on('interactionCreate', async interaction => {
                                 "/Help : sends this help panel \n" +
                                 "/Daily : Gives you 25 credits\n" +
                                 "/Balance : checks your credits\n" +
+                                "/Transfer <amount> <user> : Transfers credits to another user\n" +
                                 "/Leaderboard : Shows a embed of the users that has the most credits")
                 .setColor(0x2f3136);
 
@@ -162,7 +168,7 @@ client.on('interactionCreate', async interaction => {
                 new ButtonBuilder().setCustomId(`help_owner_${userId}`).setLabel('Owner').setStyle(ButtonStyle.Secondary)
             );
 
-            await interaction.reply({ embeds: [embed], components: [row] });
+            await interaction.reply({ embeds: [embed] });
         } 
         else if (interaction.commandName === 'daily') {
             const userData = getUser(userId);
@@ -191,6 +197,41 @@ client.on('interactionCreate', async interaction => {
             const userData = getUser(userId);
             const credits = userData.users[userId].credits;
             await interaction.reply({ content: `💰 You currently have **${credits} credits**.`, ephemeral: true });
+        }
+        else if (interaction.commandName === 'transfer') {
+            const amount = interaction.options.getInteger('amount');
+            const targetUser = interaction.options.getUser('user');
+
+            if (amount <= 0) {
+                await interaction.reply({ content: "❌ You must transfer a positive amount of credits.", ephemeral: true });
+                return;
+            }
+
+            if (targetUser.id === userId) {
+                await interaction.reply({ content: "❌ You cannot transfer credits to yourself.", ephemeral: true });
+                return;
+            }
+
+            if (targetUser.bot) {
+                await interaction.reply({ content: "❌ You cannot transfer credits to a bot.", ephemeral: true });
+                return;
+            }
+
+            const userData = getUser(userId);
+            const senderCredits = userData.users[userId].credits;
+
+            if (senderCredits < amount) {
+                await interaction.reply({ content: `❌ You do not have enough credits! Your current balance is **${senderCredits} credits**.`, ephemeral: true });
+                return;
+            }
+
+            // Perform transfer
+            getUser(targetUser.id); // Ensures target user exists in database
+            userData.users[userId].credits -= amount;
+            userData.users[targetUser.id].credits += amount;
+            saveData(userData);
+
+            await interaction.reply({ content: `💸 Successfully transferred **${amount} credits** to ${targetUser.toString()}!` });
         }
         else if (interaction.commandName === 'leaderboard') {
             const users = data.users || {};
@@ -279,6 +320,7 @@ client.on('interactionCreate', async interaction => {
                                  "/Help : sends this help panel \n" +
                                  "/Daily : Gives you 25 credits\n" +
                                  "/Balance : checks your credits\n" +
+                                 "/Transfer <amount> <user> : Transfers credits to another user\n" +
                                  "/Leaderboard : Shows a embed of the users that has the most credits")
                  .setColor(0x2f3136);
             await interaction.update({ embeds: [embed] });
@@ -286,7 +328,7 @@ client.on('interactionCreate', async interaction => {
             embed.setTitle("**👑Owner Only**")
                  .setDescription("**Commands**\n" +
                                  ".credit <number> <user> : Gives a user credit\n" +
-                                 ".delcre <number> <user> : Deletes an amount of credit from a selected user\n" +
+                                 ".delcre <number> <user> : Deletes an amount of credit from a selected user (can go in debt)\n" +
                                  ".blacklist <user> : Blacklits a user so they cant use the bot\n" +
                                  ".unblacklist <user> : Unblacklists a user\n" +
                                  ".ping : Checks the ping of the bot\n" +
@@ -338,11 +380,10 @@ client.on('messageCreate', async message => {
                 return;
             }
             const userData = getUser(member.id);
-            const currentCredits = userData.users[member.id].credits;
             
-            // Deduct credits without going below 0
-            const newCredits = Math.max(0, currentCredits - amount);
-            userData.users[member.id].credits = newCredits;
+            // Deduct credits directly without capping at 0 (allows negative balance/debt)
+            userData.users[member.id].credits -= amount;
+            const newCredits = userData.users[member.id].credits;
             saveData(userData);
 
             await message.channel.send(`✅ Removed **${amount} credits** from ${member.toString()}. New Balance: **${newCredits} credits**.`);
