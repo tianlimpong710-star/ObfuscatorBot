@@ -72,7 +72,7 @@ function obfuscateLua(code) {
     const minified = minifyLua(code);
     const key = Math.floor(Math.random() * 200) + 20;
     
-    // Generate random junk variable names so the middle looks like random strings
+    // Generate random variable names
     const rName = () => "_" + Math.random().toString(36).substring(2, 9);
     const vEnv = rName();
     const vDec = rName();
@@ -89,7 +89,6 @@ function obfuscateLua(code) {
     const encodedStr = encodedBytes.join(',');
     const watermark = "-- Obfuscated by HyperionV1 [{https://discord.gg/9wJs5bwxRz}]";
     
-    // Compact single-line VM stub with randomized variable strings
     const vmStub = `local ${vEnv}=(getfenv and getfenv(0))or _G;local function ${vDec}(...)local t={...};local r={};for i=1,#t do r[i]=string.char((t[i]-${key})%256)end;return table.concat(r);end;local ${vData}={${encodedStr}};local ${vRes}=${vDec}(unpack(${vData})or table.unpack(${vData}));local ${vFn}=loadstring or load;if ${vFn} then local ${vSuccess},${vCompiled}=pcall(${vFn},${vRes});if ${vSuccess} and type(${vCompiled})=="function" then return ${vCompiled}()else error("Hyperion Anti-Tamper: Execution failed.")end;end;`;
 
     return `${watermark}\n${vmStub}`;
@@ -287,6 +286,7 @@ client.on('interactionCreate', async interaction => {
             embed.setTitle("**👑Owner Only**")
                  .setDescription("**Commands**\n" +
                                  ".credit <number> <user> : Gives a user credit\n" +
+                                 ".delcre <number> <user> : Deletes an amount of credit from a selected user\n" +
                                  ".blacklist <user> : Blacklits a user so they cant use the bot\n" +
                                  ".unblacklist <user> : Unblacklists a user\n" +
                                  ".ping : Checks the ping of the bot\n" +
@@ -305,7 +305,7 @@ client.on('messageCreate', async message => {
     const args = message.content.slice(1).trim().split(/ +/);
     const command = args.shift().toLowerCase();
 
-    const ownerCommands = ['credit', 'blacklist', 'unblacklist', 'ping', 'premium'];
+    const ownerCommands = ['credit', 'delcre', 'blacklist', 'unblacklist', 'ping', 'premium'];
     if (ownerCommands.includes(command)) {
         if (!hasOwnerOrRole(message.member)) {
             await message.reply("❌ **Access Denied:** You do not have the required Role to run owner commands.");
@@ -329,6 +329,23 @@ client.on('messageCreate', async message => {
             userData.users[member.id].credits += amount;
             saveData(userData);
             await message.channel.send(`✅ Added **${amount} credits** to ${member.toString()}.`);
+        }
+        else if (command === 'delcre') {
+            const amount = parseInt(args[0]);
+            const member = message.mentions.members.first();
+            if (isNaN(amount) || amount <= 0 || !member) {
+                await message.channel.send("❌ Usage: `.delcre <number> @user`");
+                return;
+            }
+            const userData = getUser(member.id);
+            const currentCredits = userData.users[member.id].credits;
+            
+            // Deduct credits without going below 0
+            const newCredits = Math.max(0, currentCredits - amount);
+            userData.users[member.id].credits = newCredits;
+            saveData(userData);
+
+            await message.channel.send(`✅ Removed **${amount} credits** from ${member.toString()}. New Balance: **${newCredits} credits**.`);
         }
         else if (command === 'blacklist') {
             const member = message.mentions.members.first();
@@ -387,4 +404,4 @@ client.on('messageCreate', async message => {
 });
 
 client.login(TOKEN);
-                                         
+                
