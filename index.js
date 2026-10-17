@@ -72,7 +72,6 @@ function obfuscateLua(code) {
     const minified = minifyLua(code);
     const key = Math.floor(Math.random() * 200) + 20;
     
-    // Generate random variable names
     const rName = () => "_" + Math.random().toString(36).substring(2, 9);
     const vEnv = rName();
     const vDec = rName();
@@ -160,7 +159,11 @@ client.on('interactionCreate', async interaction => {
                                 "/Daily : Gives you 25 credits\n" +
                                 "/Balance : checks your credits\n" +
                                 "/Transfer <amount> <user> : Transfers credits to another user\n" +
-                                "/Leaderboard : Shows a embed of the users that has the most credits")
+                                "/Leaderboard : Shows a embed of the users that has the most credits\n\n" +
+                                "**PREFIX'S**\n" +
+                                ".help : sends this embed\n" +
+                                ".obf : obfuscates a code or a uploaded file\n" +
+                                ".minify : Minifys a code or a uploaded file.")
                 .setColor(0x2f3136);
 
             const row = new ActionRowBuilder().addComponents(
@@ -168,7 +171,7 @@ client.on('interactionCreate', async interaction => {
                 new ButtonBuilder().setCustomId(`help_owner_${userId}`).setLabel('Owner').setStyle(ButtonStyle.Secondary)
             );
 
-            await interaction.reply({ embeds: [embed] });
+            await interaction.reply({ embeds: [embed], components: [row] });
         } 
         else if (interaction.commandName === 'daily') {
             const userData = getUser(userId);
@@ -225,8 +228,7 @@ client.on('interactionCreate', async interaction => {
                 return;
             }
 
-            // Perform transfer
-            getUser(targetUser.id); // Ensures target user exists in database
+            getUser(targetUser.id);
             userData.users[userId].credits -= amount;
             userData.users[targetUser.id].credits += amount;
             saveData(userData);
@@ -321,7 +323,11 @@ client.on('interactionCreate', async interaction => {
                                  "/Daily : Gives you 25 credits\n" +
                                  "/Balance : checks your credits\n" +
                                  "/Transfer <amount> <user> : Transfers credits to another user\n" +
-                                 "/Leaderboard : Shows a embed of the users that has the most credits")
+                                 "/Leaderboard : Shows a embed of the users that has the most credits\n\n" +
+                                 "**PREFIX'S**\n" +
+                                 ".help : sends this embed\n" +
+                                 ".obf : obfuscates a code or a uploaded file\n" +
+                                 ".minify : Minifys a code or a uploaded file.")
                  .setColor(0x2f3136);
             await interaction.update({ embeds: [embed] });
         } else if (type === 'owner') {
@@ -381,7 +387,6 @@ client.on('messageCreate', async message => {
             }
             const userData = getUser(member.id);
             
-            // Deduct credits directly without capping at 0 (allows negative balance/debt)
             userData.users[member.id].credits -= amount;
             const newCredits = userData.users[member.id].credits;
             saveData(userData);
@@ -445,4 +450,3 @@ client.on('messageCreate', async message => {
 });
 
 client.login(TOKEN);
-                
