@@ -168,9 +168,10 @@ client.on('interactionCreate', async interaction => {
                                 "/Leaderboard : Shows a embed of the users that has the most credits")
                 .setColor(0x2f3136);
 
+            // Secure custom IDs embed the user ID so only the author can click them
             const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('help_commands').setLabel('Commands').setStyle(ButtonStyle.Primary),
-                new ButtonBuilder().setCustomId('help_owner').setLabel('Owner').setStyle(ButtonStyle.Secondary)
+                new ButtonBuilder().setCustomId(`help_commands_${userId}`).setLabel('Commands').setStyle(ButtonStyle.Primary),
+                new ButtonBuilder().setCustomId(`help_owner_${userId}`).setLabel('Owner').setStyle(ButtonStyle.Secondary)
             );
 
             await interaction.reply({ embeds: [embed], components: [row] });
@@ -185,7 +186,7 @@ client.on('interactionCreate', async interaction => {
                 const remaining = Math.floor(cooldown - (currentTime - lastClaimed));
                 const hours = Math.floor(remaining / 3600);
                 const minutes = Math.floor((remaining % 3600) / 60);
-                await interaction.reply({ content: `⏳ You must wait **${hours}h${minutes}m** before claiming your daily credits again.`, ephemeral: true });
+                await interaction.reply({ content: `⏳ You must wait **${hours}h ${minutes}m** before claiming your daily credits again.`, ephemeral: true });
                 return;
             }
 
@@ -216,7 +217,7 @@ client.on('interactionCreate', async interaction => {
             } else {
                 let rank = 1;
                 for (const [uid, uData] of sortedUsers) {
-                    description += `${rank}. <@${uid}> Credits =${uData.credits}\n`;
+                    description += `${rank}. <@${uid}> Credits = ${uData.credits}\n`;
                     rank++;
                 }
             }
@@ -265,19 +266,26 @@ client.on('interactionCreate', async interaction => {
             const output = isObf ? obfuscateLua(luaCode) : minifyLua(luaCode);
             const titleMsg = isObf ? "✅ • Obfuscation Sucsess" : "✅ • Minification Sucsess";
 
-            if (output.length > 1800) {
-                const attachment = new AttachmentBuilder(Buffer.from(output, 'utf-8'), { name: isObf ? 'obfuscated.lua' : 'minified.lua' });
-                const responseText = `•──────⋅☾⚒️☽⋅──────•\n**${titleMsg}**\n**🖤 • Thx for using Hyperion**\n•──────⋅☾⚒️☽⋅──────•\n*Output file attached due to character limits.*`;
-                await interaction.reply({ content: responseText, files: [attachment] });
-            } else {
-                const responseText = `•──────⋅☾⚒️☽⋅──────•\n**${titleMsg}**\n**🖤 • Thx for using Hyperion**\n•──────⋅☾⚒️☽⋅──────•\n\`\`\`lua\n${output}\n\`\`\``;
-                await interaction.reply({ content: responseText });
-            }
+            const attachment = new AttachmentBuilder(Buffer.from(output, 'utf-8'), { name: isObf ? 'obfuscated.lua' : 'minified.lua' });
+            const responseText = `•──────⋅☾⚒️☽⋅──────•\n**${titleMsg}**\n**🖤 • Thx for using Hyperion**\n•──────⋅☾⚒️☽⋅──────•`;
+            await interaction.reply({ content: responseText, files: [attachment] });
         }
     } 
     else if (interaction.isButton()) {
+        if (!interaction.customId.startsWith('help_')) return;
+        const parts = interaction.customId.split('_');
+        const action = parts[0]; 
+        const type = parts[1];   
+        const ownerId = parts[2]; 
+
+        // Strict validation: Reject anyone trying to click someone else's help menu
+        if (interaction.user.id !== ownerId) {
+            await interaction.reply({ content: "❌ You cannot use this help menu because you didn't run the command!", ephemeral: true });
+            return;
+        }
+
         const embed = new EmbedBuilder();
-        if (interaction.customId === 'help_commands') {
+        if (type === 'commands') {
             embed.setTitle("*** Help Menu***")
                  .setDescription("***Commands***\n" +
                                  "/Obfuscate : Obfuscates your file/pasted code\n" +
@@ -288,7 +296,7 @@ client.on('interactionCreate', async interaction => {
                                  "/Leaderboard : Shows a embed of the users that has the most credits")
                  .setColor(0x2f3136);
             await interaction.update({ embeds: [embed] });
-        } else if (interaction.customId === 'help_owner') {
+        } else if (type === 'owner') {
             embed.setTitle("**👑Owner Only**")
                  .setDescription("**Commands**\n" +
                                  ".credit <number> <user> : Gives a user credit\n" +
@@ -392,3 +400,4 @@ client.on('messageCreate', async message => {
 });
 
 client.login(TOKEN);
+    
