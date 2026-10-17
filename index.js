@@ -24,8 +24,8 @@ const ALLOWED_ROLE_IDS = [
 ];
 
 const PREMIUM_ROLE_ID = "1559111360615284806"; // Premium Role ID
-
 const DATA_FILE = "bot_data.json";
+const MAX_CREDITS = 999999999999999; // Maximum safe credit cap to prevent Infinity/null bugs
 
 // --- DATABASE HELPERS ---
 function loadData() {
@@ -33,7 +33,19 @@ function loadData() {
         return { users: {}, blacklist: [] };
     }
     try {
-        return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+        const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+        if (!data.users) data.users = {};
+        if (!data.blacklist) data.blacklist = [];
+        
+        // Sanitize existing user credits to prevent null/Infinity issues
+        for (const userId in data.users) {
+            if (data.users[userId].credits === null || isNaN(data.users[userId].credits) || !isFinite(data.users[userId].credits)) {
+                data.users[userId].credits = 0;
+            } else if (data.users[userId].credits > MAX_CREDITS) {
+                data.users[userId].credits = MAX_CREDITS;
+            }
+        }
+        return data;
     } catch (e) {
         return { users: {}, blacklist: [] };
     }
@@ -45,7 +57,7 @@ function saveData(data) {
 
 function getUser(userId) {
     const data = loadData();
-    if (!data.users[userId]) {
+    if (!data.users[userId] || data.users[userId].credits === null || isNaN(data.users[userId].credits)) {
         data.users[userId] = { credits: 10, last_daily: 0 };
         saveData(data);
     }
@@ -167,7 +179,6 @@ client.on('interactionCreate', async interaction => {
                 new ButtonBuilder().setCustomId(`help_owner_${userId}`).setLabel('Owner').setStyle(ButtonStyle.Secondary)
             );
 
-            // FIXED: Added components: [row] back here!
             await interaction.reply({ embeds: [embed], components: [row] });
         } 
         else if (interaction.commandName === 'daily') {
@@ -187,7 +198,7 @@ client.on('interactionCreate', async interaction => {
             const hasPremiumRole = interaction.member && interaction.member.roles.cache.has(PREMIUM_ROLE_ID);
             const reward = hasPremiumRole ? 100 : 25;
 
-            userData.users[userId].credits += reward;
+            userData.users[userId].credits = Math.min(MAX_CREDITS, userData.users[userId].credits + reward);
             userData.users[userId].last_daily = currentTime;
             saveData(userData);
 
@@ -227,7 +238,7 @@ client.on('interactionCreate', async interaction => {
 
             getUser(targetUser.id);
             userData.users[userId].credits -= amount;
-            userData.users[targetUser.id].credits += amount;
+            userData.users[targetUser.id].credits = Math.min(MAX_CREDITS, userData.users[targetUser.id].credits + amount);
             saveData(userData);
 
             await interaction.reply({ content: `💸 Successfully transferred **${amount} credits** to ${targetUser.toString()}!` });
@@ -236,7 +247,7 @@ client.on('interactionCreate', async interaction => {
             const users = data.users || {};
             
             const sortedUsers = Object.entries(users)
-                .sort(([, a], [, b]) => b.credits - a.credits)
+                .sort(([, a], [, b]) => (b.credits || 0) - (a.credits || 0))
                 .slice(0, 10);
 
             let description = "";
@@ -367,7 +378,7 @@ client.on('messageCreate', async message => {
                 return;
             }
             const userData = getUser(member.id);
-            userData.users[member.id].credits += amount;
+            userData.users[member.id].credits = Math.min(MAX_CREDITS, userData.users[member.id].credits + amount);
             saveData(userData);
             await message.channel.send(`✅ Added **${amount} credits** to ${member.toString()}.`);
         }
