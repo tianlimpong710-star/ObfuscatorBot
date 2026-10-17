@@ -159,11 +159,7 @@ client.on('interactionCreate', async interaction => {
                                 "/Daily : Gives you 25 credits\n" +
                                 "/Balance : checks your credits\n" +
                                 "/Transfer <amount> <user> : Transfers credits to another user\n" +
-                                "/Leaderboard : Shows a embed of the users that has the most credits\n\n" +
-                                "**PREFIX'S**\n" +
-                                ".help : sends this embed\n" +
-                                ".obf : obfuscates a code or a uploaded file\n" +
-                                ".minify : Minifys a code or a uploaded file.")
+                                "/Leaderboard : Shows a embed of the users that has the most credits")
                 .setColor(0x2f3136);
 
             const row = new ActionRowBuilder().addComponents(
@@ -171,6 +167,7 @@ client.on('interactionCreate', async interaction => {
                 new ButtonBuilder().setCustomId(`help_owner_${userId}`).setLabel('Owner').setStyle(ButtonStyle.Secondary)
             );
 
+            // FIXED: Added components: [row] back here!
             await interaction.reply({ embeds: [embed], components: [row] });
         } 
         else if (interaction.commandName === 'daily') {
@@ -323,11 +320,7 @@ client.on('interactionCreate', async interaction => {
                                  "/Daily : Gives you 25 credits\n" +
                                  "/Balance : checks your credits\n" +
                                  "/Transfer <amount> <user> : Transfers credits to another user\n" +
-                                 "/Leaderboard : Shows a embed of the users that has the most credits\n\n" +
-                                 "**PREFIX'S**\n" +
-                                 ".help : sends this embed\n" +
-                                 ".obf : obfuscates a code or a uploaded file\n" +
-                                 ".minify : Minifys a code or a uploaded file.")
+                                 "/Leaderboard : Shows a embed of the users that has the most credits")
                  .setColor(0x2f3136);
             await interaction.update({ embeds: [embed] });
         } else if (type === 'owner') {
@@ -345,96 +338,22 @@ client.on('interactionCreate', async interaction => {
     }
 });
 
-// --- PREFIX COMMANDS (GENERAL & OWNER/ROLE) ---
+// --- PREFIX COMMANDS (OWNER / ROLE ONLY) ---
 client.on('messageCreate', async message => {
     if (message.author.bot || !message.guild) return;
     if (!message.content.startsWith('.')) return;
 
     const args = message.content.slice(1).trim().split(/ +/);
     const command = args.shift().toLowerCase();
-    const userId = message.author.id;
-    const data = loadData();
 
-    if (data.blacklist && data.blacklist.includes(userId)) return;
-
-    // 1. PREFIX HELP COMMAND
-    if (command === 'help') {
-        const embed = new EmbedBuilder()
-            .setTitle("*** Help Menu***")
-            .setDescription("***Commands***\n" +
-                            "/Obfuscate : Obfuscates your file/pasted code\n" +
-                            "/Minify : Minifys your file/pasted code\n" +
-                            "/Help : sends this help panel \n" +
-                            "/Daily : Gives you 25 credits\n" +
-                            "/Balance : checks your credits\n" +
-                            "/Transfer <amount> <user> : Transfers credits to another user\n" +
-                            "/Leaderboard : Shows a embed of the users that has the most credits\n\n" +
-                            "**PREFIX'S**\n" +
-                            ".help : sends this embed\n" +
-                            ".obf : obfuscates a code or a uploaded file\n" +
-                            ".minify : Minifys a code or a uploaded file.")
-            .setColor(0x2f3136);
-
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId(`help_commands_${userId}`).setLabel('Commands').setStyle(ButtonStyle.Primary),
-            new ButtonBuilder().setCustomId(`help_owner_${userId}`).setLabel('Owner').setStyle(ButtonStyle.Secondary)
-        );
-
-        await message.reply({ embeds: [embed], components: [row] });
-        return;
-    }
-
-    // 2. PREFIX OBFUSCATE & MINIFY COMMANDS
-    if (command === 'obf' || command === 'minify') {
-        const userData = getUser(userId);
-        if (userData.users[userId].credits < 2) {
-            await message.reply("❌ **Access Denied:** You need at least **2 credits** to use this command. Use `/daily` to get credits!");
-            return;
-        }
-
-        const codeArg = args.join(' ');
-        const attachmentOpt = message.attachments.first();
-        let luaCode = "";
-
-        if (attachmentOpt) {
-            if (!attachmentOpt.name.endsWith('.lua')) {
-                await message.reply("❌ Please upload a valid `.lua` file.");
-                return;
-            }
-            try {
-                const response = await fetch(attachmentOpt.url);
-                luaCode = await response.text();
-            } catch (e) {
-                await message.reply("❌ Failed to read the attached file.");
-                return;
-            }
-        } else if (codeArg) {
-            luaCode = codeArg;
-        } else {
-            await message.reply("❌ Please provide either pasted code or attach a Lua file.");
-            return;
-        }
-
-        userData.users[userId].credits -= 2;
-        saveData(userData);
-
-        const isObf = command === 'obf';
-        const output = isObf ? obfuscateLua(luaCode) : minifyLua(luaCode);
-        const titleMsg = isObf ? "✅ • Obfuscation Sucsess" : "✅ • Minification Sucsess";
-
-        const attachment = new AttachmentBuilder(Buffer.from(output, 'utf-8'), { name: isObf ? 'obfuscated.lua' : 'minified.lua' });
-        const responseText = `•──────⋅☾⚒️☽⋅──────•\n**${titleMsg}**\n**🖤 • Thx for using Hyperion**\n•──────⋅☾⚒️☽⋅──────•`;
-        await message.reply({ content: responseText, files: [attachment] });
-        return;
-    }
-
-    // 3. OWNER / ROLE ONLY COMMANDS
     const ownerCommands = ['credit', 'delcre', 'blacklist', 'unblacklist', 'ping', 'premium'];
     if (ownerCommands.includes(command)) {
         if (!hasOwnerOrRole(message.member)) {
             await message.reply("❌ **Access Denied:** You do not have the required Role to run owner commands.");
             return;
         }
+
+        const data = loadData();
 
         if (command === 'ping') {
             const latency = Math.round(client.ws.ping);
