@@ -25,7 +25,7 @@ const ALLOWED_ROLE_IDS = [
 
 const PREMIUM_ROLE_ID = "1559111360615284806"; // Premium Role ID
 const DATA_FILE = "bot_data.json";
-const MAX_CREDITS = 999999999999999; // Maximum safe credit cap to prevent Infinity/null bugs
+const MAX_CREDITS = 999999999999999999999999999999999999999999999999999999; // Maximum safe credit cap to prevent Infinity/null bugs
 
 // --- DATABASE HELPERS ---
 function loadData() {
@@ -317,7 +317,7 @@ client.on('interactionCreate', async interaction => {
         const ownerId = parts[2]; 
 
         if (interaction.user.id !== ownerId) {
-            await interaction.reply({ content: "❌ You cannot use this help menu because you didn't run the command!", ephemeral: true });
+            await interaction.reply({ content: "You cannot use other users help menu.", ephemeral: true });
             return;
         }
 
