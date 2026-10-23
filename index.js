@@ -610,7 +610,7 @@ client.on('interactionCreate', async interaction => {
                 const watermarkInput = new TextInputBuilder()
                     .setCustomId('watermark_text')
                     .setLabel('Type your watermark')
-                    .setPlaceholder('Obfuscated by LunarScripts')
+                    .setPlaceholder('Example = Obfuscated by User')
                     .setStyle(TextInputStyle.Short)
                     .setMaxLength(150)
                     .setRequired(true);
@@ -690,7 +690,7 @@ client.on('interactionCreate', async interaction => {
             const attachment = new AttachmentBuilder(Buffer.from(output, 'utf-8'), { name: session.settings.language === 'luau' ? 'obfuscated.luau' : 'obfuscated.lua' });
             pendingObfuscations.delete(ownerId);
             const successEmbed = new EmbedBuilder()
-                .setDescription('•──────⋅☾⚒️☽⋅──────•\n\n✅ **Obfuscation Success**\n🖤 Thx for using Hyperion\n\n•──────⋅☾⚒️☽⋅──────•')
+                .setDescription('✅ • Obfuscation Sucsess\n🔮• Thx For Your support User')
                 .setColor(0xFFFFFF);
             await interaction.update({
                 content: '',
