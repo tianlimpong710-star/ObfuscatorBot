@@ -516,7 +516,8 @@ client.on('interactionCreate', async interaction => {
                 const isRawLink = parsedUrl && parsedUrl.protocol === 'https:' &&
                     !parsedUrl.username && !parsedUrl.password &&
                     ((host === 'pastebin.com' && /^\/raw\/[A-Za-z0-9]+\/?$/.test(path)) ||
-                     (host === 'pastefy.app' && /^\/raw\/[A-Za-z0-9_-]+\/?$/.test(path)) ||
+                     // Pastefy supports both /raw/<id> and /<id>/raw URL formats.
+                     (host === 'pastefy.app' && (/^\/raw\/[A-Za-z0-9_-]+\/?$/.test(path) || /^\/[A-Za-z0-9_-]+\/raw\/?$/.test(path))) ||
                      (host === 'api.rubis.com' && /^\/raw\/[A-Za-z0-9._/-]+$/.test(path)) ||
                      (host === 'raw.githubuser.com' && /^\/[A-Za-z0-9._/-]+$/.test(path)) ||
                      (host === 'raw.githubusercontent.com' && /^\/[A-Za-z0-9._/-]+$/.test(path)));
@@ -576,10 +577,12 @@ client.on('interactionCreate', async interaction => {
                     settings: { watermark: 'hyperion', watermarkText: '', intense: false, language: 'luau' }
                 };
                 pendingObfuscations.set(userId, session);
+                // Public panel: editing an ephemeral interaction can only produce an ephemeral result.
+                // Keep the panel and final output in one public message visible to the channel.
                 await interaction.reply({
                     embeds: [makeObfuscationEmbed(session)],
                     components: makeObfuscationPanel(session),
-                    ephemeral: true
+                    ephemeral: false
                 });
                 return;
             }
@@ -610,7 +613,7 @@ client.on('interactionCreate', async interaction => {
                 const watermarkInput = new TextInputBuilder()
                     .setCustomId('watermark_text')
                     .setLabel('Type your watermark')
-                    .setPlaceholder('Example = Obfuscated by User')
+                    .setPlaceholder('Obfuscated by LunarScripts')
                     .setStyle(TextInputStyle.Short)
                     .setMaxLength(150)
                     .setRequired(true);
@@ -690,14 +693,17 @@ client.on('interactionCreate', async interaction => {
             const attachment = new AttachmentBuilder(Buffer.from(output, 'utf-8'), { name: session.settings.language === 'luau' ? 'obfuscated.luau' : 'obfuscated.lua' });
             pendingObfuscations.delete(ownerId);
             const successEmbed = new EmbedBuilder()
-                .setDescription('✅ • Obfuscation Sucsess\n🔮• Thx For Your support User')
+                .setDescription('•──────⋅☾⚒️☽⋅──────•\n\n✅ **Obfuscation Success**\n🖤 Thx for using Hyperion\n\n•──────⋅☾⚒️☽⋅──────•')
                 .setColor(0xFFFFFF);
+            // Edit the existing public panel once. Do not reply/followUp/send separately,
+            // so the attachment and single success embed stay in one public message.
             await interaction.update({
-                content: '',
+                content: null,
                 embeds: [successEmbed],
-                components: []
+                components: [],
+                files: [attachment],
+                allowedMentions: { parse: [] }
             });
-            await interaction.followUp({ embeds: [successEmbed], files: [attachment], ephemeral: true });
             return;
         }
         if (!interaction.customId.startsWith('help_')) return;
