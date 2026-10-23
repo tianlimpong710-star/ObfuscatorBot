@@ -351,9 +351,16 @@ const commands = [
         .addStringOption(option => option.setName('url').setDescription('Raw URL containing downloadable Lua text').setRequired(false)),
     new SlashCommandBuilder()
         .setName('minify')
-        .setDescription('Minifies your file or pasted code (Costs 2 credits)')
+        .setDescription('Minifies your file, raw URL, or pasted code (Costs 2 credits)')
         .addStringOption(option => option.setName('code').setDescription('Pasted Lua code').setRequired(false))
         .addAttachmentOption(option => option.setName('file').setDescription('Lua file attachment').setRequired(false))
+        .addStringOption(option => option.setName('url').setDescription('Raw URL containing downloadable Lua text').setRequired(false)),
+    new SlashCommandBuilder().setName('credit').setDescription('Owner: add credits').addIntegerOption(o => o.setName('amount').setDescription('Amount').setRequired(true)).addUserOption(o => o.setName('user').setDescription('Target user').setRequired(true)),
+    new SlashCommandBuilder().setName('delcre').setDescription('Owner: remove credits').addIntegerOption(o => o.setName('amount').setDescription('Amount').setRequired(true)).addUserOption(o => o.setName('user').setDescription('Target user').setRequired(true)),
+    new SlashCommandBuilder().setName('blacklist').setDescription('Owner: blacklist a user').addUserOption(o => o.setName('user').setDescription('Target user').setRequired(true)),
+    new SlashCommandBuilder().setName('unblacklist').setDescription('Owner: unblacklist a user').addUserOption(o => o.setName('user').setDescription('Target user').setRequired(true)),
+    new SlashCommandBuilder().setName('ping').setDescription('Owner: check bot latency'),
+    new SlashCommandBuilder().setName('premium').setDescription('Owner: toggle premium role').addUserOption(o => o.setName('user').setDescription('Target user').setRequired(true))
 ].map(command => command.toJSON());
 
 client.once('ready', () => {
@@ -383,17 +390,68 @@ client.on('interactionCreate', async interaction => {
             return;
         }
 
+        const ownerSlashCommands = ['credit', 'delcre', 'blacklist', 'unblacklist', 'ping', 'premium'];
+        if (ownerSlashCommands.includes(interaction.commandName)) {
+            if (!hasOwnerOrRole(interaction.member)) {
+                await interaction.reply({ content: '❌ Access denied: you do not have permission to use this command.', ephemeral: true });
+                return;
+            }
+            const target = interaction.options.getUser('user');
+            if (interaction.commandName === 'ping') {
+                await interaction.reply({ content: `🏓 Pong! Latency: **${Math.round(client.ws.ping)}ms**`, ephemeral: true });
+                return;
+            }
+            if (interaction.commandName === 'credit' || interaction.commandName === 'delcre') {
+                const amount = interaction.options.getInteger('amount');
+                if (amount <= 0) { await interaction.reply({ content: 'Amount must be greater than zero.', ephemeral: true }); return; }
+                const targetData = getUser(target.id);
+                targetData.users[target.id].credits = interaction.commandName === 'credit'
+                    ? Math.min(MAX_CREDITS, targetData.users[target.id].credits + amount)
+                    : targetData.users[target.id].credits - amount;
+                saveData(targetData);
+                await interaction.reply({ content: `✅ ${interaction.commandName === 'credit' ? 'Added' : 'Removed'} ${amount} credits ${interaction.commandName === 'credit' ? 'to' : 'from'} ${target}.`, ephemeral: true });
+                return;
+            }
+            const ownerData = loadData();
+            if (!ownerData.blacklist) ownerData.blacklist = [];
+            if (interaction.commandName === 'blacklist' || interaction.commandName === 'unblacklist') {
+                const exists = ownerData.blacklist.includes(target.id);
+                if (interaction.commandName === 'blacklist' && !exists) ownerData.blacklist.push(target.id);
+                if (interaction.commandName === 'unblacklist' && exists) ownerData.blacklist = ownerData.blacklist.filter(id => id !== target.id);
+                saveData(ownerData);
+                await interaction.reply({ content: interaction.commandName === 'blacklist' ? (exists ? `${target} is already blacklisted.` : `✅ Blacklisted ${target}.`) : (exists ? `✅ Unblacklisted ${target}.` : `${target} was not blacklisted.`), ephemeral: true });
+                return;
+            }
+            if (interaction.commandName === 'premium') {
+                const member = await interaction.guild.members.fetch(target.id).catch(() => null);
+                if (!member) { await interaction.reply({ content: 'Could not find that server member.', ephemeral: true }); return; }
+                try {
+                    if (member.roles.cache.has(PREMIUM_ROLE_ID)) { await member.roles.remove(PREMIUM_ROLE_ID); await interaction.reply({ content: `Removed Premium from ${target}.`, ephemeral: true }); }
+                    else { await member.roles.add(PREMIUM_ROLE_ID); await interaction.reply({ content: `Granted Premium to ${target}.`, ephemeral: true }); }
+                } catch (e) { await interaction.reply({ content: 'Failed to update Premium role. Check the bot role permissions.', ephemeral: true }); }
+                return;
+            }
+        }
+
         if (interaction.commandName === 'help') {
             const embed = new EmbedBuilder()
                 .setTitle("*** Help Menu***")
-                .setDescription("***Commands***\n" +
-                                "/Obfuscate : Obfuscates a raw URL, file, or pasted code\n" +
-                                "/Minify : Minifys your file/pasted code\n" +
-                                "/Help : sends this help panel \n" +
-                                "/Daily : Gives you 25 credits\n" +
-                                "/Balance : checks your credits\n" +
-                                "/Transfer <amount> <user> : Transfers credits to another user\n" +
-                                "/Leaderboard : Shows a embed of the users that has the most credits")
+                .setDescription("**Slash Commands**\n" +
+                                "/help - Show this help menu\n" +
+                                "/daily - Claim daily credits\n" +
+                                "/balance - Check your credits\n" +
+                                "/leaderboard - View the credits leaderboard\n" +
+                                "/transfer <amount> <@user> - Transfer credits\n" +
+                                "/obfuscate <code> or <file> or <url> - Obfuscate Lua\n" +
+                                "/minify <code> or <file> or <url> - Minify Lua\n\n" +
+                                "**Prefix's**\n" +
+                                ".help\n" +
+                                ".daily\n" +
+                                ".balance\n" +
+                                ".leaderboard\n" +
+                                ".transfer <amount> <@user>\n" +
+                                ".obfuscate <code> or <file> or <url>\n" +
+                                ".minify <code> or <file> or <url>")
                 .setColor(0xFFFFFF);
 
             const row = new ActionRowBuilder().addComponents(
@@ -618,9 +676,14 @@ client.on('interactionCreate', async interaction => {
     } 
     else if (interaction.isStringSelectMenu()) {
         if (!interaction.customId.startsWith('obf_')) return;
-        const session = pendingObfuscations.get(interaction.user.id);
-        if (!session || !interaction.customId.endsWith(`_${interaction.user.id}`)) {
-            await interaction.reply({ content: 'This obfuscation panel is not yours or has expired. Run `/obfuscate` again.', ephemeral: true });
+        const ownerId = interaction.customId.split('_').pop();
+        if (interaction.user.id !== ownerId) {
+            await interaction.reply({ content: 'vro this is another users panel tf u doing', ephemeral: true });
+            return;
+        }
+        const session = pendingObfuscations.get(ownerId);
+        if (!session) {
+            await interaction.reply({ content: 'This obfuscation panel has expired. Run `/obfuscate` again.', ephemeral: true });
             return;
         }
         const selected = interaction.values[0];
@@ -669,7 +732,7 @@ client.on('interactionCreate', async interaction => {
         if (interaction.customId.startsWith('obf_cancel_')) {
             const ownerId = interaction.customId.slice('obf_cancel_'.length);
             if (interaction.user.id !== ownerId) {
-                await interaction.reply({ content: 'This panel is not yours.', ephemeral: true });
+                await interaction.reply({ content: 'vro this is another users panel tf u doing', ephemeral: true });
                 return;
             }
             pendingObfuscations.delete(ownerId);
@@ -679,7 +742,7 @@ client.on('interactionCreate', async interaction => {
         if (interaction.customId.startsWith('obf_finish_')) {
             const ownerId = interaction.customId.slice('obf_finish_'.length);
             if (interaction.user.id !== ownerId) {
-                await interaction.reply({ content: 'This panel is not yours.', ephemeral: true });
+                await interaction.reply({ content: 'vro this is another users panel tf u doing', ephemeral: true });
                 return;
             }
             const session = pendingObfuscations.get(ownerId);
@@ -770,13 +833,20 @@ client.on('interactionCreate', async interaction => {
             await interaction.update({ embeds: [embed] });
         } else if (type === 'owner') {
             embed.setTitle("**👑Owner Only**")
-                 .setDescription("**Commands**\n" +
-                                 ".credit <number> <user> : Gives a user credit\n" +
-                                 ".delcre <number> <user> : Deletes an amount of credit from a selected user (can go in debt)\n" +
-                                 ".blacklist <user> : Blacklits a user so they cant use the bot\n" +
-                                 ".unblacklist <user> : Unblacklists a user\n" +
-                                 ".ping : Checks the ping of the bot\n" +
-                                 ".premium <user> : Gives user premium improved daily now getting 100 credits from the /daily")
+                 .setDescription("**Slash Commands**\n" +
+                                 "/credit <amount> <@user> - Give a user credits\n" +
+                                 "/delcre <amount> <@user> - Remove credits from a user\n" +
+                                 "/blacklist <@user> - Blacklist a user\n" +
+                                 "/unblacklist <@user> - Remove a user from the blacklist\n" +
+                                 "/ping - Check bot latency\n" +
+                                 "/premium <@user> - Toggle the premium role\n\n" +
+                                 "**Prefix's**\n" +
+                                 ".credit <amount> <@user>\n" +
+                                 ".delcre <amount> <@user>\n" +
+                                 ".blacklist <@user>\n" +
+                                 ".unblacklist <@user>\n" +
+                                 ".ping\n" +
+                                 ".premium <@user>")
                  .setColor(0xFFFFFF);
             await interaction.update({ embeds: [embed] });
         }
@@ -790,6 +860,61 @@ client.on('messageCreate', async message => {
 
     const args = message.content.slice(1).trim().split(/ +/);
     const command = args.shift().toLowerCase();
+
+    // Prefix aliases for the public slash commands.
+    if (['help', 'daily', 'balance', 'leaderboard', 'transfer', 'obfuscate', 'minify'].includes(command)) {
+        const data = loadData();
+        const uid = message.author.id;
+        if ((data.blacklist || []).includes(uid)) { await message.reply('❌ You are blacklisted from using this bot.'); return; }
+        if (command === 'help') {
+            await message.reply({ embeds: [new EmbedBuilder().setColor(0xFFFFFF).setDescription(`**Slash Commands**\n/help\n/daily\n/balance\n/leaderboard\n/transfer <amount> <@user>\n/obfuscate <code> or <file> or <url>\n/minify <code> or <file> or <url>\n\n**Prefix's**\n.help\n.daily\n.balance\n.leaderboard\n.transfer <amount> <@user>\n.obfuscate <code> or <file> or <url>\n.minify <code> or <file> or <url>`)] });;
+            return;
+        }
+        if (command === 'daily') {
+            const userData = getUser(uid); const now = Date.now() / 1000; const last = userData.users[uid].last_daily || 0;
+            if (now - last < 86400) { await message.reply('⏳ Your daily credits are still on cooldown.'); return; }
+            const premium = message.member.roles.cache.has(PREMIUM_ROLE_ID); const reward = premium ? 100 : 25;
+            userData.users[uid].credits = Math.min(MAX_CREDITS, userData.users[uid].credits + reward); userData.users[uid].last_daily = now; saveData(userData);
+            await message.reply(`✅ You claimed **${reward} credits**!`); return;
+        }
+        if (command === 'balance') { const ud = getUser(uid); await message.reply(`💰 You have **${ud.users[uid].credits} credits**.`); return; }
+        if (command === 'leaderboard') {
+            const top = Object.entries(data.users || {}).sort((a,b) => (b[1].credits || 0) - (a[1].credits || 0)).slice(0,10);
+            const desc = top.length ? top.map(([id,u],i) => `${i+1}. <@${id}> — ${u.credits || 0} credits`).join('\n') : 'No users found yet.';
+            await message.channel.send({ embeds: [new EmbedBuilder().setTitle('Leaderboard').setDescription(desc).setColor(0xFFFFFF)] }); return;
+        }
+        if (command === 'transfer') {
+            const amount = Number.parseInt(args[0], 10); const target = message.mentions.users.first();
+            if (!Number.isInteger(amount) || amount <= 0 || !target || target.bot || target.id === uid) { await message.reply('Usage: `.transfer <positive amount> @user`'); return; }
+            const ud = getUser(uid); getUser(target.id);
+            if (ud.users[uid].credits < amount) { await message.reply('❌ Not enough credits.'); return; }
+            ud.users[uid].credits -= amount; ud.users[target.id].credits = Math.min(MAX_CREDITS, ud.users[target.id].credits + amount); saveData(ud);
+            await message.reply(`💸 Transferred **${amount} credits** to ${target}.`); return;
+        }
+        if (command === 'obfuscate' || command === 'minify') {
+            const input = args.join(' ').trim() || message.attachments.first()?.url;
+            if (!input) { await message.reply(`Usage: \.${command} <Lua code or raw URL> (or attach a .lua file)`); return; }
+            let luaCode = input;
+            if (/^https?:\/\//i.test(input)) {
+                let u; try { u = new URL(input); } catch (_) { u = null; }
+                const host = u?.hostname.toLowerCase(); const path = u?.pathname || '';
+                const raw = u && u.protocol === 'https:' && ((host === 'pastebin.com' && /^\/raw\/[A-Za-z0-9]+\/?$/.test(path)) || (host === 'pastefy.app' && (/^\/raw\/[A-Za-z0-9_-]+\/?$/.test(path) || /^\/[A-Za-z0-9_-]+\/raw\/?$/.test(path))) || (host === 'api.rubis.app' && /^\/v2\/scrap\/[A-Za-z0-9_-]+\/raw\/?$/.test(path)) || host === 'raw.githubusercontent.com' || host === 'raw.githubuser.com');
+                if (!raw) { await message.reply({ embeds: [new EmbedBuilder().setTitle('Error').setDescription('Link/Url isnt a raw link containing downloadable text').setColor(0xFFFFFF)] }); return; }
+                try { const res = await fetch(u.href, { signal: AbortSignal.timeout(12000) }); if (!res.ok) throw new Error('HTTP'); luaCode = await res.text(); if (!luaCode.trim() || Buffer.byteLength(luaCode) > 1000000) throw new Error('invalid'); }
+                catch (_) { await message.reply('❌ Could not download text from that raw URL.'); return; }
+            } else if (message.attachments.size) {
+                try { const res = await fetch(message.attachments.first().url); if (!res.ok) throw new Error('HTTP'); luaCode = await res.text(); } catch (_) { await message.reply('❌ Failed to read attached file.'); return; }
+            }
+            const ud = getUser(uid); if (ud.users[uid].credits < 2) { await message.reply('❌ You need 2 credits.'); return; }
+            ud.users[uid].credits -= 2; saveData(ud);
+            const output = command === 'minify' ? minifyLua(luaCode) : buildPortableEncryptedScript(minifyLua(luaCode));
+            const attachment = new AttachmentBuilder(Buffer.from(output, 'utf8'), { name: command === 'minify' ? 'minified.lua' : 'obfuscated.luau' });
+            const preview = output.split(/\r?\n/).slice(0,10).join('\n').slice(0,900) || '(empty output)';
+            const label = command === 'minify' ? 'Minification Sucsess' : 'Obfuscation Success';
+            const embed = new EmbedBuilder().setColor(0xFFFFFF).setDescription(['•────────────⋅☾⚒️☽⋅────────────•','','✅ • **' + label + '**','🖤 • Thx for using Hyperiion','⚒️ • Output preview','```\n' + preview + '\n```','👥 • +1 Vouch = 100 credits',"📜 • Check Out the Rule's",'⚠️ • If there any bug Report it immidiently any troll report will result in a ban','•────────────⋅☾⚒️☽⋅────────────•'].join('\n').slice(0,4096));
+            await message.channel.send({ embeds: [embed], files: [attachment], allowedMentions: { parse: [] } }); return;
+        }
+    }
 
     const ownerCommands = ['credit', 'delcre', 'blacklist', 'unblacklist', 'ping', 'premium'];
     if (ownerCommands.includes(command)) {
