@@ -519,6 +519,8 @@ client.on('interactionCreate', async interaction => {
                      // Pastefy supports both /raw/<id> and /<id>/raw URL formats.
                      (host === 'pastefy.app' && (/^\/raw\/[A-Za-z0-9_-]+\/?$/.test(path) || /^\/[A-Za-z0-9_-]+\/raw\/?$/.test(path))) ||
                      (host === 'api.rubis.com' && /^\/raw\/[A-Za-z0-9._/-]+$/.test(path)) ||
+                     // Rubis API scrap links use /v2/scrap/<id>/raw on api.rubis.app.
+                     (host === 'api.rubis.app' && /^\/v2\/scrap\/[A-Za-z0-9_-]+\/raw\/?$/.test(path)) ||
                      (host === 'raw.githubuser.com' && /^\/[A-Za-z0-9._/-]+$/.test(path)) ||
                      (host === 'raw.githubusercontent.com' && /^\/[A-Za-z0-9._/-]+$/.test(path)));
 
@@ -613,7 +615,7 @@ client.on('interactionCreate', async interaction => {
                 const watermarkInput = new TextInputBuilder()
                     .setCustomId('watermark_text')
                     .setLabel('Type your watermark')
-                    .setPlaceholder('Obfuscated by LunarScripts')
+                    .setPlaceholder('Example = Obfuscated by User')
                     .setStyle(TextInputStyle.Short)
                     .setMaxLength(150)
                     .setRequired(true);
@@ -693,7 +695,7 @@ client.on('interactionCreate', async interaction => {
             const attachment = new AttachmentBuilder(Buffer.from(output, 'utf-8'), { name: session.settings.language === 'luau' ? 'obfuscated.luau' : 'obfuscated.lua' });
             pendingObfuscations.delete(ownerId);
             const successEmbed = new EmbedBuilder()
-                .setDescription('•──────⋅☾⚒️☽⋅──────•\n\n✅ **Obfuscation Success**\n🖤 Thx for using Hyperion\n\n•──────⋅☾⚒️☽⋅──────•')
+                .setDescription('•────────────────────────⋅☾⚒️☽⋅────────────────────────•\n\n✅ • **Obfuscation Success**\n🖤 • Thx for using Hyperion\n ⚒️ • Support us by Vouching in the Vouching channel\n•────────────────────────⋅☾⚒️☽⋅────────────────────────•')
                 .setColor(0xFFFFFF);
             // Edit the existing public panel once. Do not reply/followUp/send separately,
             // so the attachment and single success embed stay in one public message.
