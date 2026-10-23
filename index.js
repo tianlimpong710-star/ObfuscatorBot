@@ -8,7 +8,11 @@ const {
     ActionRowBuilder, 
     ButtonBuilder, 
     ButtonStyle, 
-    AttachmentBuilder 
+    AttachmentBuilder,
+    StringSelectMenuBuilder,
+    ModalBuilder,
+    TextInputBuilder,
+    TextInputStyle
 } = require('discord.js');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -225,6 +229,99 @@ function obfuscateLua(code) {
     return buildProtectedScript(code);
 }
 
+// Pending obfuscation sessions are kept in memory until the user confirms their settings.
+const pendingObfuscations = new Map();
+const HYPERION_WATERMARK = '--Obfuscated by HyperionV1 [https://discord.gg/9wJs5bwxRz]';
+
+function makeObfuscationPanel(session) {
+    const userId = session.userId;
+    const watermarkRow = new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+            .setCustomId(`obf_watermark_${userId}`)
+            .setPlaceholder('Row 1 • Choose a watermark')
+            .addOptions(
+                { label: 'Hyperions Watermark On', value: 'hyperion', description: 'Add the Hyperion watermark to the output.', default: session.settings.watermark === 'hyperion' },
+                { label: 'Hyperions Watermark Off', value: 'off', description: 'Output without a watermark.', default: session.settings.watermark === 'off' },
+                { label: 'Custom Watermark', value: 'custom', description: 'Type your own watermark.', default: session.settings.watermark === 'custom' }
+            )
+    );
+    const vmRow = new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+            .setCustomId(`obf_vm_${userId}`)
+            .setPlaceholder('Row 2 • Choose VM encryption')
+            .addOptions(
+                { label: 'Intense VM encryption ON', value: 'on', description: 'Encrypts the original source in heavy VM structure.', default: session.settings.intense === true },
+                { label: 'Intense VM encryption Off', value: 'off', description: 'The normal and recommended version.', default: session.settings.intense === false }
+            )
+    );
+    const languageRow = new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+            .setCustomId(`obf_language_${userId}`)
+            .setPlaceholder('Row 3 • Choose language')
+            .addOptions(
+                { label: 'LuaU (Roblox)', value: 'luau', description: 'Roblox Luau output.', default: session.settings.language === 'luau' },
+                { label: 'Lua', value: 'lua', description: 'Standard Lua output.', default: session.settings.language === 'lua' }
+            )
+    );
+    const finishRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`obf_finish_${userId}`).setLabel('Obfuscate Now').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId(`obf_cancel_${userId}`).setLabel('Cancel').setStyle(ButtonStyle.Secondary)
+    );
+    return [watermarkRow, vmRow, languageRow, finishRow];
+}
+
+function makeObfuscationEmbed(session) {
+    const watermarkLabel = session.settings.watermark === 'hyperion'
+        ? 'Hyperion watermark ON'
+        : session.settings.watermark === 'custom'
+            ? `Custom watermark: ${session.settings.watermarkText || '(not entered yet)'}`
+            : 'Watermark OFF';
+
+    return new EmbedBuilder()
+        .setTitle('Obfuscation Panel')
+        .setDescription(
+            'Hya user, you decided to use the /obfuscate command. Here are some options for ya.\n\n' +
+            '**Action Row 1 — Watermark**\n' +
+            '• **Hyperions Watermark On** — adds the Hyperion watermark.\n' +
+            '• **Hyperions Watermark Off** — outputs without a watermark.\n' +
+            '• **Custom Watermark** — enter your own watermark text.\n\n' +
+            '**Action Row 2 — Encryption**\n' +
+            '• **Intense VM encryption ON** — encrypts the original source in a heavy VM structure.\n' +
+            '• **Intense VM encryption Off** — the normal and recommended version.\n\n' +
+            '**Action Row 3 — Output language**\n' +
+            '• **LuaU (Roblox)** — output for Roblox Luau.\n' +
+            '• **Lua** — standard Lua output.'
+        )
+        .addFields({
+            name: 'Current settings',
+            value: `• Watermark: ${watermarkLabel}\n` +
+                `• Intense VM encryption: ${session.settings.intense ? 'ON' : 'OFF (recommended)'}\n` +
+                `• Output language: ${session.settings.language === 'luau' ? 'LuaU (Roblox)' : 'Lua'}`
+        })
+        .setFooter({ text: 'Use the dropdown menus below the embed to change options.' })
+        .setColor(0x5865F2);
+}
+
+function buildPortableEncryptedScript(code) {
+    const key = Math.floor(Math.random() * 200) + 20;
+    const bytes = [...Buffer.from(code, 'utf8')].map(byte => (byte + key) % 256).join(',');
+    const rand = () => '_' + Math.random().toString(36).slice(2, 10);
+    const dataName = rand(), keyName = rand(), sourceName = rand(), loaderName = rand();
+    return `local ${dataName}={${bytes}};local ${keyName}=${key};local ${sourceName}={};for i=1,#${dataName} do ${sourceName}[i]=string.char((${dataName}[i]-${keyName})%256) end;local ${loaderName}=loadstring or load;if not ${loaderName} then error("This Lua environment does not support loading source",0) end;local f,e=${loaderName}(table.concat(${sourceName}));if not f then error(e or "Unable to load obfuscated source",0) end;return f()`;
+}
+
+function applyWatermark(output, settings) {
+    // The protected Luau engine adds its own watermark; remove it so the chosen setting is respected.
+    output = output.replace(/^--[^\r\n]*HyperionV1[^\r\n]*\r?\n/, '');
+    let watermark = '';
+    if (settings.watermark === 'hyperion') watermark = HYPERION_WATERMARK;
+    if (settings.watermark === 'custom') {
+        const text = (settings.watermarkText || '').trim().replace(/^--\s*/, '');
+        if (text) watermark = `--${text}`;
+    }
+    return watermark ? `${watermark}\n${output}` : output;
+}
+
 // --- CLIENT SETUP ---
 const client = new Client({
     intents: [
@@ -418,19 +515,132 @@ client.on('interactionCreate', async interaction => {
                 return;
             }
 
+            const isObf = interaction.commandName === 'obfuscate';
+            if (isObf) {
+                const session = {
+                    userId,
+                    code: luaCode,
+                    settings: { watermark: 'hyperion', watermarkText: '', intense: false, language: 'luau' }
+                };
+                pendingObfuscations.set(userId, session);
+                await interaction.reply({
+                    embeds: [makeObfuscationEmbed(session)],
+                    components: makeObfuscationPanel(session),
+                    ephemeral: true
+                });
+                return;
+            }
+
             userData.users[userId].credits -= 2;
             saveData(userData);
-
-            const isObf = interaction.commandName === 'obfuscate';
-            const output = isObf ? obfuscateLua(luaCode) : minifyLua(luaCode);
-            const titleMsg = isObf ? "✅ • Obfuscation Sucsess" : "✅ • Minification Sucsess";
-
-            const attachment = new AttachmentBuilder(Buffer.from(output, 'utf-8'), { name: isObf ? 'obfuscated.lua' : 'minified.lua' });
-            const responseText = `•──────⋅☾⚒️☽⋅──────•\n**${titleMsg}**\n**🖤 • Thx for using Hyperion**\n•──────⋅☾⚒️☽⋅──────•`;
-            await interaction.reply({ content: responseText, files: [attachment] });
+            const output = minifyLua(luaCode);
+            const attachment = new AttachmentBuilder(Buffer.from(output, 'utf-8'), { name: 'minified.lua' });
+            await interaction.reply({
+                content: '•──────⋅☾⚒️☽⋅──────•\n**✅ • Minification Success**\n**🖤 • Thx for using Hyperion**\n•──────⋅☾⚒️☽⋅──────•',
+                files: [attachment]
+            });
         }
     } 
+    else if (interaction.isStringSelectMenu()) {
+        if (!interaction.customId.startsWith('obf_')) return;
+        const session = pendingObfuscations.get(interaction.user.id);
+        if (!session || !interaction.customId.endsWith(`_${interaction.user.id}`)) {
+            await interaction.reply({ content: 'This obfuscation panel is not yours or has expired. Run `/obfuscate` again.', ephemeral: true });
+            return;
+        }
+        const selected = interaction.values[0];
+        if (interaction.customId.startsWith('obf_watermark_')) {
+            if (selected === 'custom') {
+                const modal = new ModalBuilder()
+                    .setCustomId(`obf_modal_${interaction.user.id}`)
+                    .setTitle('Custom Watermark');
+                const watermarkInput = new TextInputBuilder()
+                    .setCustomId('watermark_text')
+                    .setLabel('Type your watermark')
+                    .setPlaceholder('Obfuscated by LunarScripts')
+                    .setStyle(TextInputStyle.Short)
+                    .setMaxLength(150)
+                    .setRequired(true);
+                modal.addComponents(new ActionRowBuilder().addComponents(watermarkInput));
+                await interaction.showModal(modal);
+                return;
+            }
+            session.settings.watermark = selected;
+            session.settings.watermarkText = '';
+        } else if (interaction.customId.startsWith('obf_vm_')) {
+            session.settings.intense = selected === 'on';
+        } else if (interaction.customId.startsWith('obf_language_')) {
+            session.settings.language = selected;
+        }
+        await interaction.update({ embeds: [makeObfuscationEmbed(session)], components: makeObfuscationPanel(session) });
+    }
+    else if (interaction.isModalSubmit()) {
+        if (!interaction.customId.startsWith('obf_modal_')) return;
+        const session = pendingObfuscations.get(interaction.user.id);
+        if (!session || interaction.customId !== `obf_modal_${interaction.user.id}`) {
+            await interaction.reply({ content: 'This obfuscation panel has expired. Run `/obfuscate` again.', ephemeral: true });
+            return;
+        }
+        const watermarkText = interaction.fields.getTextInputValue('watermark_text').trim();
+        if (!watermarkText) {
+            await interaction.reply({ content: 'Please enter a non-empty watermark.', ephemeral: true });
+            return;
+        }
+        session.settings.watermark = 'custom';
+        session.settings.watermarkText = watermarkText.replace(/^--\s*/, '');
+        await interaction.update({ embeds: [makeObfuscationEmbed(session)], components: makeObfuscationPanel(session) });
+    }
     else if (interaction.isButton()) {
+        if (interaction.customId.startsWith('obf_cancel_')) {
+            const ownerId = interaction.customId.slice('obf_cancel_'.length);
+            if (interaction.user.id !== ownerId) {
+                await interaction.reply({ content: 'This panel is not yours.', ephemeral: true });
+                return;
+            }
+            pendingObfuscations.delete(ownerId);
+            await interaction.update({ content: 'Obfuscation cancelled. No credits were charged.', embeds: [], components: [] });
+            return;
+        }
+        if (interaction.customId.startsWith('obf_finish_')) {
+            const ownerId = interaction.customId.slice('obf_finish_'.length);
+            if (interaction.user.id !== ownerId) {
+                await interaction.reply({ content: 'This panel is not yours.', ephemeral: true });
+                return;
+            }
+            const session = pendingObfuscations.get(ownerId);
+            if (!session) {
+                await interaction.reply({ content: 'This panel has expired. Run `/obfuscate` again.', ephemeral: true });
+                return;
+            }
+            if (session.settings.intense && session.settings.language === 'lua') {
+                await interaction.reply({ content: 'Intense VM encryption currently requires **LuaU (Roblox)**. Select LuaU or turn Intense VM encryption off.', ephemeral: true });
+                return;
+            }
+            const userData = getUser(ownerId);
+            if (userData.users[ownerId].credits < 2) {
+                pendingObfuscations.delete(ownerId);
+                await interaction.update({ content: '❌ You no longer have enough credits. You need 2 credits to obfuscate.', embeds: [], components: [] });
+                return;
+            }
+            userData.users[ownerId].credits -= 2;
+            saveData(userData);
+            let output;
+            if (session.settings.intense) {
+                output = buildProtectedScript(minifyLua(session.code)).replace(/^--[^\r\n]*HyperionV1[^\r\n]*\r?\n/, '');
+            } else {
+                output = buildPortableEncryptedScript(minifyLua(session.code));
+            }
+            output = applyWatermark(output, session.settings);
+            const attachment = new AttachmentBuilder(Buffer.from(output, 'utf-8'), { name: session.settings.language === 'luau' ? 'obfuscated.luau' : 'obfuscated.lua' });
+            pendingObfuscations.delete(ownerId);
+            await interaction.update({
+                content: '•──────⋅☾⚒️☽⋅──────•\n**✅ • Obfuscation Success**\n**🖤 • Thx for using Hyperion**\n•──────⋅☾⚒️☽⋅──────•',
+                embeds: [],
+                components: []
+            });
+            await interaction.followUp({ files: [attachment], ephemeral: true });
+            return;
+        }
         if (!interaction.customId.startsWith('help_')) return;
         const parts = interaction.customId.split('_');
         const type = parts[1];   
