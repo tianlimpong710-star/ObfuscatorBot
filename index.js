@@ -695,7 +695,7 @@ client.on('interactionCreate', async interaction => {
             const attachment = new AttachmentBuilder(Buffer.from(output, 'utf-8'), { name: session.settings.language === 'luau' ? 'obfuscated.luau' : 'obfuscated.lua' });
             pendingObfuscations.delete(ownerId);
             const successEmbed = new EmbedBuilder()
-                .setDescription('•──────────────────⋅☾⚒️☽⋅──────────────────•\n\n✅ • **Obfuscation Success**\n🖤 • Thx for using Hyperion\n ⚒️ • Support us by Vouching in the Vouching channel\n•──────────────────⋅☾⚒️☽⋅──────────────────•')
+                .setDescription('•────────────⋅☾⚒️☽⋅────────────•\n\n✅ • **Obfuscation Success**\n🖤 • Thx for using Hyperion\n ⚒️ • Support us by Vouching in the Vouching channel\n•────────────⋅☾⚒️☽⋅────────────•')
                 .setColor(0xFFFFFF);
             // Edit the existing public panel once. Do not reply/followUp/send separately,
             // so the attachment and single success embed stay in one public message.
