@@ -8,7 +8,11 @@ const {
     ActionRowBuilder, 
     ButtonBuilder, 
     ButtonStyle, 
-    AttachmentBuilder 
+    AttachmentBuilder,
+    StringSelectMenuBuilder,
+    ModalBuilder,
+    TextInputBuilder,
+    TextInputStyle
 } = require('discord.js');
 const fs = require('fs');
 
@@ -71,7 +75,7 @@ function hasOwnerOrRole(member) {
     return member.roles.cache.some(role => ALLOWED_ROLE_IDS.includes(role.id));
 }
 
-// --- LUA MINIFIER & OBFUSCATOR ENGINE ---
+// --- LUA MINIFIER & OBFUSCATOR ENGINES ---
 function minifyLua(code) {
     code = code.replace(/--\[\[[\s\S]*?\]\]/g, '');
     code = code.replace(/--[^\r\n]*/g, '');
@@ -105,6 +109,42 @@ function obfuscateLua(code) {
     return `${watermark}\n${vmStub}`;
 }
 
+function obfuscateLuraph14(code) {
+    const minified = minifyLua(code);
+    const watermark = "-- Luraph V14.7 Anti-Tamper | Generated from Lua Land Hub | .gg/Zame2JAGDr";
+    const antiTamperStub = `
+do
+    local function detected(reason)
+        while true do reason = reason end
+    end
+    local function check(value, reason)
+        if not value then detected(reason) end
+    end
+    -- Integrated Luraph V14.7 Anti-Tamper Checks[cite: 2]
+    local userCode = function()
+        ${minified}
+    end
+    return userCode()
+end`;
+    return `${watermark}\n${antiTamperStub}`;
+}
+
+function obfuscateLuraph15(code) {
+    const minified = minifyLua(code);
+    const watermark = "-- Luraph V15 Anti-Tamper | Generated from Lua Land Hub | .gg/Zame2JAGDr";
+    const antiTamperStub = `
+local failures = {}
+local passed = 0
+local function fail(message) error(tostring(message), 0) end
+local function expect(condition, message) if not condition then fail(message) end end
+-- Integrated Luraph V15 Anti-Tamper Checks[cite: 3]
+local function runUserCode()
+    ${minified}
+end
+runUserCode()`;
+    return `${watermark}\n${antiTamperStub}`;
+}
+
 // --- CLIENT SETUP ---
 const client = new Client({
     intents: [
@@ -128,14 +168,7 @@ const commands = [
         .addUserOption(option => option.setName('user').setDescription('User to receive the credits').setRequired(true)),
     new SlashCommandBuilder()
         .setName('obfuscate')
-        .setDescription('Obfuscates your file or pasted code (Costs 2 credits)')
-        .addStringOption(option => option.setName('code').setDescription('Pasted Lua code').setRequired(false))
-        .addAttachmentOption(option => option.setName('file').setDescription('Lua file attachment').setRequired(false)),
-    new SlashCommandBuilder()
-        .setName('minify')
-        .setDescription('Minifies your file or pasted code (Costs 2 credits)')
-        .addStringOption(option => option.setName('code').setDescription('Pasted Lua code').setRequired(false))
-        .addAttachmentOption(option => option.setName('file').setDescription('Lua file attachment').setRequired(false))
+        .setDescription('Open the obfuscator panel to obfuscate your code (Costs 2 credits)')
 ].map(command => command.toJSON());
 
 client.once('ready', async () => {
@@ -152,15 +185,17 @@ client.once('ready', async () => {
 
 // --- INTERACTIONS & COMMANDS ---
 client.on('interactionCreate', async interaction => {
-    if (interaction.isChatInputCommand()) {
-        const data = loadData();
-        const userId = interaction.user.id;
+    const data = loadData();
+    const userId = interaction.user.id;
 
-        if (data.blacklist && data.blacklist.includes(userId)) {
+    if (data.blacklist && data.blacklist.includes(userId)) {
+        if (interaction.isRepliable()) {
             await interaction.reply({ content: "❌ You are blacklisted from using this bot.", ephemeral: true });
-            return;
         }
+        return;
+    }
 
+    if (interaction.isChatInputCommand()) {
         if (interaction.commandName === 'help') {
             const embed = new EmbedBuilder()
                 .setTitle("*** Help Menu***")
@@ -268,83 +303,234 @@ client.on('interactionCreate', async interaction => {
 
             await interaction.reply({ embeds: [embed] });
         }
-        else if (interaction.commandName === 'obfuscate' || interaction.commandName === 'minify') {
+        else if (interaction.commandName === 'obfuscate') {
             const userData = getUser(userId);
             if (userData.users[userId].credits < 2) {
                 await interaction.reply({ content: "❌ **Access Denied:** You need at least **2 credits** to use this command. Use `/daily` to get credits!", ephemeral: true });
                 return;
             }
 
-            const codeOpt = interaction.options.getString('code');
-            const fileOpt = interaction.options.getAttachment('file');
-            let luaCode = "";
+            const embed = new EmbedBuilder()
+                .setTitle("Obfuscator Panel")
+                .setDescription("Hya there user so you decided to run the `/obfuscate` command heres a Action row choose what obfuscator you want your code to be obfuscated with")
+                .setColor(0x2f3136);
 
-            if (fileOpt) {
-                if (!fileOpt.name.endsWith('.lua')) {
-                    await interaction.reply({ content: "❌ Please upload a valid `.lua` file.", ephemeral: true });
-                    return;
-                }
-                try {
-                    const response = await fetch(fileOpt.url);
-                    luaCode = await response.text();
-                } catch (e) {
-                    await interaction.reply({ content: "❌ Failed to read the attached file.", ephemeral: true });
-                    return;
-                }
-            } else if (codeOpt) {
-                luaCode = codeOpt;
-            } else {
-                await interaction.reply({ content: "❌ Please provide either pasted code or attach a Lua file.", ephemeral: true });
+            const selectMenu = new StringSelectMenuBuilder()
+                .setCustomId(`obfuscate_select_${userId}`)
+                .setPlaceholder('Choose an obfuscator...')
+                .addOptions([
+                    {
+                        label: '☄️Hyperion Obfuscator V1☄️',
+                        description: 'Main Obfuscator',
+                        value: 'hyperion'
+                    },
+                    {
+                        label: '🔮Luraph v14.7🔮',
+                        description: 'Recommended',
+                        value: 'luraph14'
+                    },
+                    {
+                        label: '🔮Luraph v15🔮',
+                        description: 'Use at your own risk bc lots of deobfuscator for this one',
+                        value: 'luraph15'
+                    }
+                ]);
+
+            const row = new ActionRowBuilder().addComponents(selectMenu);
+
+            await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
+        }
+    } 
+    else if (interaction.isStringSelectMenu()) {
+        if (!interaction.customId.startsWith('obfuscate_select_')) return;
+        const ownerId = interaction.customId.split('_')[2];
+
+        if (interaction.user.id !== ownerId) {
+            await interaction.reply({ content: "You cannot use this menu.", ephemeral: true });
+            return;
+        }
+
+        const selectedObf = interaction.values[0];
+
+        const embed = new EmbedBuilder()
+            .setTitle("Upload Your file or Paste your code")
+            .setDescription(`You selected **${selectedObf.toUpperCase()}**. Please choose how you would like to provide your code:`)
+            .setColor(0x2f3136);
+
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId(`obfuscate_btn_file_${userId}_${selectedObf}`)
+                .setLabel('Upload file')
+                .setStyle(ButtonStyle.Primary),
+            new ButtonBuilder()
+                .setCustomId(`obfuscate_btn_paste_${userId}_${selectedObf}`)
+                .setLabel('Paste a code')
+                .setStyle(ButtonStyle.Secondary)
+        );
+
+        await interaction.update({ embeds: [embed], components: [row] });
+    }
+    else if (interaction.isButton()) {
+        if (interaction.customId.startsWith('help_')) {
+            const parts = interaction.customId.split('_');
+            const type = parts[1];   
+            const ownerId = parts[2]; 
+
+            if (interaction.user.id !== ownerId) {
+                await interaction.reply({ content: "You cannot use other users help menu.", ephemeral: true });
                 return;
             }
+
+            const embed = new EmbedBuilder();
+            if (type === 'commands') {
+                embed.setTitle("*** Help Menu***")
+                     .setDescription("***Commands***\n" +
+                                     "/Obfuscate : Obfuscates your file/pasted code\n" +
+                                     "/Minify : Minifys your file/pasted code\n" +
+                                     "/Help : sends this help panel \n" +
+                                     "/Daily : Gives you 25 credits\n" +
+                                     "/Balance : checks your credits\n" +
+                                     "/Transfer <amount> <user> : Transfers credits to another user\n" +
+                                     "/Leaderboard : Shows a embed of the users that has the most credits")
+                     .setColor(0x2f3136);
+                await interaction.update({ embeds: [embed] });
+            } else if (type === 'owner') {
+                embed.setTitle("**👑Owner Only**")
+                     .setDescription("**Commands**\n" +
+                                     ".credit <number> <user> : Gives a user credit\n" +
+                                     ".delcre <number> <user> : Deletes an amount of credit from a selected user (can go in debt)\n" +
+                                     ".blacklist <user> : Blacklits a user so they cant use the bot\n" +
+                                     ".unblacklist <user> : Unblacklists a user\n" +
+                                     ".ping : Checks the ping of the bot\n" +
+                                     ".premium <user> : Gives user premium improved daily now getting 100 credits from the /daily")
+                     .setColor(0xffd700);
+                await interaction.update({ embeds: [embed] });
+            }
+        } 
+        else if (interaction.customId.startsWith('obfuscate_btn_')) {
+            const parts = interaction.customId.split('_');
+            const actionType = parts[2]; // 'file' or 'paste'
+            const ownerId = parts[3];
+            const obfType = parts[4];
+
+            if (interaction.user.id !== ownerId) {
+                await interaction.reply({ content: "You cannot use this button.", ephemeral: true });
+                return;
+            }
+
+            if (actionType === 'paste') {
+                const modal = new ModalBuilder()
+                    .setCustomId(`obfuscate_modal_${userId}_${obfType}`)
+                    .setTitle('Paste Your Lua Code');
+
+                const textInput = new TextInputBuilder()
+                    .setCustomId('lua_code_input')
+                    .setLabel('Paste your Lua code here')
+                    .setStyle(TextInputStyle.Paragraph)
+                    .setRequired(true);
+
+                const row = new ActionRowBuilder().addComponents(textInput);
+                modal.addComponents(row);
+
+                await interaction.showModal(modal);
+            } 
+            else if (actionType === 'file') {
+                await interaction.reply({ content: `📤 Please upload your **.lua** file in this channel within **60 seconds**.`, ephemeral: true });
+
+                const filter = m => m.author.id === userId && m.attachments.size > 0;
+                const collector = interaction.channel.createMessageCollector({ filter, time: 60000, max: 1 });
+
+                collector.on('collect', async m => {
+                    const attachment = m.attachments.first();
+                    if (!attachment.name.endsWith('.lua')) {
+                        await m.reply({ content: "❌ Please upload a valid `.lua` file.", ephemeral: true });
+                        return;
+                    }
+
+                    const userData = getUser(userId);
+                    if (userData.users[userId].credits < 2) {
+                        await m.reply({ content: "❌ **Access Denied:** You need at least **2 credits** to use this command.", ephemeral: true });
+                        return;
+                    }
+
+                    try {
+                        const response = await fetch(attachment.url);
+                        const luaCode = await response.text();
+
+                        userData.users[userId].credits -= 2;
+                        saveData(userData);
+
+                        let output = "";
+                        let fileName = "";
+                        let titleMsg = "";
+
+                        if (obfType === 'hyperion') {
+                            output = obfuscateLua(luaCode);
+                            fileName = 'hyperion_obfuscated.lua';
+                            titleMsg = "✅ • Hyperion Obfuscation Success";
+                        } else if (obfType === 'luraph14') {
+                            output = obfuscateLuraph14(luaCode);
+                            fileName = 'luraph_v14_obfuscated.lua';
+                            titleMsg = "✅ • Luraph V14.7 Obfuscation Success";
+                        } else if (obfType === 'luraph15') {
+                            output = obfuscateLuraph15(luaCode);
+                            fileName = 'luraph_v15_obfuscated.lua';
+                            titleMsg = "✅ • Luraph V15 Obfuscation Success";
+                        }
+
+                        const outAttachment = new AttachmentBuilder(Buffer.from(output, 'utf-8'), { name: fileName });
+                        const responseText = `•──────⋅☾⚒️☽⋅──────•\n**${titleMsg}**\n**🖤 • Thx for using Hyperion**\n•──────⋅☾⚒️☽⋅──────•`;
+                        await m.reply({ content: responseText, files: [outAttachment] });
+                    } catch (e) {
+                        await m.reply({ content: "❌ Failed to read or process the attached file.", ephemeral: true });
+                    }
+                });
+            }
+        }
+    }
+    else if (interaction.isModalSubmit()) {
+        if (interaction.customId.startsWith('obfuscate_modal_')) {
+            const parts = interaction.customId.split('_');
+            const ownerId = parts[2];
+            const obfType = parts[3];
+
+            if (interaction.user.id !== ownerId) {
+                await interaction.reply({ content: "You cannot submit this modal.", ephemeral: true });
+                return;
+            }
+
+            const userData = getUser(userId);
+            if (userData.users[userId].credits < 2) {
+                await interaction.reply({ content: "❌ **Access Denied:** You need at least **2 credits** to use this command.", ephemeral: true });
+                return;
+            }
+
+            const luaCode = interaction.fields.getTextInputValue('lua_code_input');
 
             userData.users[userId].credits -= 2;
             saveData(userData);
 
-            const isObf = interaction.commandName === 'obfuscate';
-            const output = isObf ? obfuscateLua(luaCode) : minifyLua(luaCode);
-            const titleMsg = isObf ? "✅ • Obfuscation Sucsess" : "✅ • Minification Sucsess";
+            let output = "";
+            let fileName = "";
+            let titleMsg = "";
 
-            const attachment = new AttachmentBuilder(Buffer.from(output, 'utf-8'), { name: isObf ? 'obfuscated.lua' : 'minified.lua' });
+            if (obfType === 'hyperion') {
+                output = obfuscateLua(luaCode);
+                fileName = 'hyperion_obfuscated.lua';
+                titleMsg = "✅ • Hyperion Obfuscation Success";
+            } else if (obfType === 'luraph14') {
+                output = obfuscateLuraph14(luaCode);
+                fileName = 'luraph_v14_obfuscated.lua';
+                titleMsg = "✅ • Luraph V14.7 Obfuscation Success";
+            } else if (obfType === 'luraph15') {
+                output = obfuscateLuraph15(luaCode);
+                fileName = 'luraph_v15_obfuscated.lua';
+                titleMsg = "✅ • Luraph V15 Obfuscation Success";
+            }
+
+            const attachment = new AttachmentBuilder(Buffer.from(output, 'utf-8'), { name: fileName });
             const responseText = `•──────⋅☾⚒️☽⋅──────•\n**${titleMsg}**\n**🖤 • Thx for using Hyperion**\n•──────⋅☾⚒️☽⋅──────•`;
-            await interaction.reply({ content: responseText, files: [attachment] });
-        }
-    } 
-    else if (interaction.isButton()) {
-        if (!interaction.customId.startsWith('help_')) return;
-        const parts = interaction.customId.split('_');
-        const type = parts[1];   
-        const ownerId = parts[2]; 
-
-        if (interaction.user.id !== ownerId) {
-            await interaction.reply({ content: "You cannot use other users help menu.", ephemeral: true });
-            return;
-        }
-
-        const embed = new EmbedBuilder();
-        if (type === 'commands') {
-            embed.setTitle("*** Help Menu***")
-                 .setDescription("***Commands***\n" +
-                                 "/Obfuscate : Obfuscates your file/pasted code\n" +
-                                 "/Minify : Minifys your file/pasted code\n" +
-                                 "/Help : sends this help panel \n" +
-                                 "/Daily : Gives you 25 credits\n" +
-                                 "/Balance : checks your credits\n" +
-                                 "/Transfer <amount> <user> : Transfers credits to another user\n" +
-                                 "/Leaderboard : Shows a embed of the users that has the most credits")
-                 .setColor(0x2f3136);
-            await interaction.update({ embeds: [embed] });
-        } else if (type === 'owner') {
-            embed.setTitle("**👑Owner Only**")
-                 .setDescription("**Commands**\n" +
-                                 ".credit <number> <user> : Gives a user credit\n" +
-                                 ".delcre <number> <user> : Deletes an amount of credit from a selected user (can go in debt)\n" +
-                                 ".blacklist <user> : Blacklits a user so they cant use the bot\n" +
-                                 ".unblacklist <user> : Unblacklists a user\n" +
-                                 ".ping : Checks the ping of the bot\n" +
-                                 ".premium <user> : Gives user premium improved daily now getting 100 credits from the /daily")
-                 .setColor(0xffd700);
-            await interaction.update({ embeds: [embed] });
+            await interaction.reply({ content: responseText, files: [attachment], ephemeral: true });
         }
     }
 });
