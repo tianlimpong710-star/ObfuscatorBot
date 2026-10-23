@@ -229,6 +229,27 @@ function obfuscateLua(code) {
     return buildProtectedScript(code);
 }
 
+// Upload generated output to Rubis so users receive a permanent raw-text URL.
+async function createRubisRawLink(content) {
+    const response = await fetch('https://api.rubis.app/v2/scrap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({ content }),
+        signal: AbortSignal.timeout(15000)
+    });
+    const bodyText = await response.text();
+    if (!response.ok) throw new Error(`Rubis upload failed (${response.status})`);
+
+    let data;
+    try { data = JSON.parse(bodyText); } catch (_) { throw new Error('Rubis returned an unexpected response'); }
+    const id = data.scrapID || data.scrapId || data.id || data.scrap?.id || data.data?.scrapID || data.data?.id || data.result?.id;
+    if (typeof id !== 'string' || !/^[A-Za-z0-9_-]+$/.test(id)) {
+        if (typeof data.url === 'string' && /^https:\/\/api\.rubis\.app\/v2\/scrap\/[A-Za-z0-9_-]+\/raw\/?$/.test(data.url)) return data.url;
+        throw new Error('Rubis did not return a valid scrap ID');
+    }
+    return `https://api.rubis.app/v2/scrap/${id}/raw`;
+}
+
 // Pending obfuscation sessions are kept in memory until the user confirms their settings.
 const pendingObfuscations = new Map();
 const HYPERION_WATERMARK = '--Obfuscated by HyperionV1 [https://discord.gg/9wJs5bwxRz]';
@@ -263,11 +284,20 @@ function makeObfuscationPanel(session) {
                 { label: 'Lua', value: 'lua', description: 'Standard Lua output.', default: session.settings.language === 'lua' }
             )
     );
+    const multiVmRow = new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+            .setCustomId(`obf_multivm_${userId}`)
+            .setPlaceholder('Row 4 • Multi VM')
+            .addOptions(
+                { label: 'Multi VM On', value: 'on', description: 'Wrap the output in two VM protection layers.', default: session.settings.multiVm === true },
+                { label: 'Multi VM Off', value: 'off', description: 'Use one protection layer or the standard mode.', default: session.settings.multiVm === false }
+            )
+    );
     const finishRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId(`obf_finish_${userId}`).setLabel('Obfuscate Now').setStyle(ButtonStyle.Success),
         new ButtonBuilder().setCustomId(`obf_cancel_${userId}`).setLabel('Cancel').setStyle(ButtonStyle.Secondary)
     );
-    return [watermarkRow, vmRow, languageRow, finishRow];
+    return [watermarkRow, vmRow, languageRow, multiVmRow, finishRow];
 }
 
 function makeObfuscationEmbed(session) {
@@ -290,13 +320,17 @@ function makeObfuscationEmbed(session) {
             '• **Intense VM encryption Off** — the normal and recommended version.\n\n' +
             '**Action Row 3 — Output language**\n' +
             '• **LuaU (Roblox)** — output for Roblox Luau.\n' +
-            '• **Lua** — standard Lua output.'
+            '• **Lua** — standard Lua output.\n\n' +
+            '**Action Row 4 — Multi VM**\n' +
+            '• **Multi VM On** — wraps the script in two VM protection layers.\n' +
+            '• **Multi VM Off** — uses the selected single-layer or standard mode.'
         )
         .addFields({
             name: 'Current settings',
             value: `• Watermark: ${watermarkLabel}\n` +
                 `• Intense VM encryption: ${session.settings.intense ? 'ON' : 'OFF (recommended)'}\n` +
-                `• Output language: ${session.settings.language === 'luau' ? 'LuaU (Roblox)' : 'Lua'}`
+                `• Output language: ${session.settings.language === 'luau' ? 'LuaU (Roblox)' : 'Lua'}\n` +
+                `• Multi VM: ${session.settings.multiVm ? 'ON (two layers)' : 'OFF'}`
         })
         .setFooter({ text: 'Use the dropdown menus below the embed to change options.' })
         .setColor(0xFFFFFF);
@@ -456,7 +490,7 @@ client.on('interactionCreate', async interaction => {
 
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId(`help_commands_${userId}`).setLabel('Commands').setStyle(ButtonStyle.Primary),
-                new ButtonBuilder().setCustomId(`help_owner_${userId}`).setLabel('Owner').setStyle(ButtonStyle.Secondary)
+                new ButtonBuilder().setCustomId(`help_owner_${userId}`).setLabel('Owner Only').setStyle(ButtonStyle.Secondary)
             );
 
             await interaction.reply({ embeds: [embed], components: [row] });
@@ -634,7 +668,7 @@ client.on('interactionCreate', async interaction => {
                 const session = {
                     userId,
                     code: luaCode,
-                    settings: { watermark: 'hyperion', watermarkText: '', intense: false, language: 'luau' }
+                    settings: { watermark: 'hyperion', watermarkText: '', intense: false, language: 'luau', multiVm: false }
                 };
                 pendingObfuscations.set(userId, session);
                 // Public panel: editing an ephemeral interaction can only produce an ephemeral result.
@@ -650,6 +684,8 @@ client.on('interactionCreate', async interaction => {
             userData.users[userId].credits -= 2;
             saveData(userData);
             const output = minifyLua(luaCode);
+            let rubisRawLink = null;
+            try { rubisRawLink = await createRubisRawLink(output); } catch (e) { console.error('Rubis upload failed:', e.message); }
             const attachment = new AttachmentBuilder(Buffer.from(output, 'utf-8'), { name: 'minified.lua' });
             const outputPreview = output.split(/\r?\n/).slice(0, 10).join('\n').slice(0, 900) || '(empty output)';
             const successDescription = [
@@ -659,6 +695,7 @@ client.on('interactionCreate', async interaction => {
                 '🖤 • Thx for using Hyperiion',
                 '⚒️ • Output preview',
                 '```\n' + outputPreview + '\n```',
+                rubisRawLink ? `🔗 • [Rubis Raw Output](${rubisRawLink})` : '⚠️ • Rubis link unavailable; use the attached output file.',
                 '👥 • +1 Vouch = 100 credits',
                 '📜 • Check Out the Rule\'s',
                 '⚠️ • If there any bug Report it immidiently any troll report will result in a ban',
@@ -709,6 +746,8 @@ client.on('interactionCreate', async interaction => {
             session.settings.intense = selected === 'on';
         } else if (interaction.customId.startsWith('obf_language_')) {
             session.settings.language = selected;
+        } else if (interaction.customId.startsWith('obf_multivm_')) {
+            session.settings.multiVm = selected === 'on';
         }
         await interaction.update({ embeds: [makeObfuscationEmbed(session)], components: makeObfuscationPanel(session) });
     }
@@ -763,22 +802,29 @@ client.on('interactionCreate', async interaction => {
             userData.users[ownerId].credits -= 2;
             saveData(userData);
             let output;
-            if (session.settings.intense) {
-                output = buildProtectedScript(minifyLua(session.code)).replace(/^--[^\r\n]*HyperionV1[^\r\n]*\r?\n/, '');
+            const minifiedSource = minifyLua(session.code);
+            if (session.settings.multiVm) {
+                // Multi VM mode uses two nested protected-loader layers.
+                output = buildProtectedScript(minifiedSource).replace(/^--[^\r\n]*HyperionV1[^\r\n]*\r?\n/, '');
+                output = buildProtectedScript(output).replace(/^--[^\r\n]*HyperionV1[^\r\n]*\r?\n/, '');
+            } else if (session.settings.intense) {
+                output = buildProtectedScript(minifiedSource).replace(/^--[^\r\n]*HyperionV1[^\r\n]*\r?\n/, '');
             } else {
-                output = buildPortableEncryptedScript(minifyLua(session.code));
+                output = buildPortableEncryptedScript(minifiedSource);
             }
             output = applyWatermark(output, session.settings);
             // Intense VM mode can emit a multi-line template. Collapse its generated statement
             // separators to semicolons so the final file is one physical line. Convert a leading
             // line-comment watermark to a block comment first so it cannot comment out the script.
-            if (session.settings.intense) {
-                output = output.replace(/^--([^\r\n]*)\r?\n/, '--$1;');
+            if (session.settings.intense || session.settings.multiVm) {
+                output = output.replace(/^--([^\r\n]*)\r?\n/, '--$1');
                 output = output.split(/\r?\n/).map(line => line.trim()).filter(Boolean).join(';');
                 output = output.replace(/;{2,}/g, ';').replace(/^;+|;+$/g, '');
             } else {
                 output = output.split(/\r?\n/).map(line => line.trim()).filter(Boolean).join('\n');
             }
+            let rubisRawLink = null;
+            try { rubisRawLink = await createRubisRawLink(output); } catch (e) { console.error('Rubis upload failed:', e.message); }
             const attachment = new AttachmentBuilder(Buffer.from(output, 'utf-8'), { name: session.settings.language === 'luau' ? 'obfuscated.luau' : 'obfuscated.lua' });
             pendingObfuscations.delete(ownerId);
             const outputPreview = output.split(/\r?\n/).slice(0, 10).join('\n').slice(0, 900) || '(empty output)';
@@ -789,6 +835,7 @@ client.on('interactionCreate', async interaction => {
                 '🖤 • Thx for using Hyperiion',
                 '⚒️ • Output preview',
                 '```\n' + outputPreview + '\n```',
+                rubisRawLink ? `🔗 • [Rubis Raw Output](${rubisRawLink})` : '⚠️ • Rubis link unavailable; use the attached output file.',
                 '👥 • +1 Vouch = 100 credits',
                 '📜 • Check Out the Rule\'s',
                 '⚠️ • If there any bug Report it immidiently any troll report will result in a ban',
@@ -821,14 +868,22 @@ client.on('interactionCreate', async interaction => {
         const embed = new EmbedBuilder();
         if (type === 'commands') {
             embed.setTitle("*** Help Menu***")
-                 .setDescription("***Commands***\n" +
-                                 "/Obfuscate : Obfuscates a raw URL, file, or pasted code\n" +
-                                 "/Minify : Minifys your file/pasted code\n" +
-                                 "/Help : sends this help panel \n" +
-                                 "/Daily : Gives you 25 credits\n" +
-                                 "/Balance : checks your credits\n" +
-                                 "/Transfer <amount> <user> : Transfers credits to another user\n" +
-                                 "/Leaderboard : Shows a embed of the users that has the most credits")
+                 .setDescription("**Slash Commands**\n" +
+                                 "/help - Show this help menu\n" +
+                                 "/daily - Claim daily credits\n" +
+                                 "/balance - Check your credits\n" +
+                                 "/leaderboard - View the credits leaderboard\n" +
+                                 "/transfer <amount> <@user> - Transfer credits\n" +
+                                 "/obfuscate <code> or <file> or <url> - Obfuscate Lua\n" +
+                                 "/minify <code> or <file> or <url> - Minify Lua\n\n" +
+                                 "**Prefix Commands**\n" +
+                                 ".help - Show this help menu\n" +
+                                 ".daily - Claim daily credits\n" +
+                                 ".balance - Check your credits\n" +
+                                 ".leaderboard - View the credits leaderboard\n" +
+                                 ".transfer <amount> <@user> - Transfer credits\n" +
+                                 ".obfuscate <code> or <file> or <url> - Obfuscate Lua\n" +
+                                 ".minify <code> or <file> or <url> - Minify Lua")
                  .setColor(0xFFFFFF);
             await interaction.update({ embeds: [embed] });
         } else if (type === 'owner') {
@@ -916,10 +971,12 @@ client.on('messageCreate', async message => {
             const ud = getUser(uid); if (ud.users[uid].credits < 2) { await message.reply('❌ You need 2 credits.'); return; }
             ud.users[uid].credits -= 2; saveData(ud);
             const output = command === 'minify' ? minifyLua(luaCode) : buildPortableEncryptedScript(minifyLua(luaCode));
+            let rubisRawLink = null;
+            try { rubisRawLink = await createRubisRawLink(output); } catch (e) { console.error('Rubis upload failed:', e.message); }
             const attachment = new AttachmentBuilder(Buffer.from(output, 'utf8'), { name: command === 'minify' ? 'minified.lua' : 'obfuscated.luau' });
             const preview = output.split(/\r?\n/).slice(0,10).join('\n').slice(0,900) || '(empty output)';
             const label = command === 'minify' ? 'Minification Sucsess' : 'Obfuscation Success';
-            const embed = new EmbedBuilder().setColor(0xFFFFFF).setDescription(['•────────────⋅☾⚒️☽⋅────────────•','','✅ • **' + label + '**','🖤 • Thx for using Hyperiion','⚒️ • Output preview','```\n' + preview + '\n```','👥 • +1 Vouch = 100 credits',"📜 • Check Out the Rule's",'⚠️ • If there any bug Report it immidiently any troll report will result in a ban','•────────────⋅☾⚒️☽⋅────────────•'].join('\n').slice(0,4096));
+            const embed = new EmbedBuilder().setColor(0xFFFFFF).setDescription(['•────────────⋅☾⚒️☽⋅────────────•','','✅ • **' + label + '**','🖤 • Thx for using Hyperiion','⚒️ • Output preview','```\n' + preview + '\n```',rubisRawLink ? `🔗 • [Rubis Raw Output](${rubisRawLink})` : '⚠️ • Rubis link unavailable; use the attached output file.','👥 • +1 Vouch = 100 credits',"📜 • Check Out the Rule's",'⚠️ • If there any bug Report it immidiently any troll report will result in a ban','•────────────⋅☾⚒️☽⋅────────────•'].join('\n').slice(0,4096));
             await message.channel.send({ embeds: [embed], files: [attachment], allowedMentions: { parse: [] } }); return;
         }
     }
