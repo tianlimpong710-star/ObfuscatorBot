@@ -557,7 +557,7 @@ client.on('interactionCreate', async interaction => {
                 const watermarkInput = new TextInputBuilder()
                     .setCustomId('watermark_text')
                     .setLabel('Type your watermark')
-                    .setPlaceholder('Obfuscated by LunarScripts')
+                    .setPlaceholder('Text Example = Obfuscated by User!')
                     .setStyle(TextInputStyle.Short)
                     .setMaxLength(150)
                     .setRequired(true);
@@ -631,14 +631,19 @@ client.on('interactionCreate', async interaction => {
                 output = buildPortableEncryptedScript(minifyLua(session.code));
             }
             output = applyWatermark(output, session.settings);
+            // Remove empty lines and trim generated lines to keep the output compact without
+            // joining Lua comments and code onto the same line.
+            output = output.split(/\r?\n/).map(line => line.trim()).filter(Boolean).join('\n');
             const attachment = new AttachmentBuilder(Buffer.from(output, 'utf-8'), { name: session.settings.language === 'luau' ? 'obfuscated.luau' : 'obfuscated.lua' });
             pendingObfuscations.delete(ownerId);
+            const successEmbed = new EmbedBuilder()
+                .setDescription('•──────⋅☾⚒️☽⋅──────•\n\n✅ **Obfuscation Success**\n🖤 Thx for using Hyperion\n\n•──────⋅☾⚒️☽⋅──────•');
             await interaction.update({
-                content: '•──────⋅☾⚒️☽⋅──────•\n**✅ • Obfuscation Success**\n**🖤 • Thx for using Hyperion**\n•──────⋅☾⚒️☽⋅──────•',
-                embeds: [],
+                content: '',
+                embeds: [successEmbed],
                 components: []
             });
-            await interaction.followUp({ files: [attachment], ephemeral: true });
+            await interaction.followUp({ embeds: [successEmbed], files: [attachment], ephemeral: true });
             return;
         }
         if (!interaction.customId.startsWith('help_')) return;
