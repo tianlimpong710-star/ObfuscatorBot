@@ -8,13 +8,10 @@ const {
     ActionRowBuilder, 
     ButtonBuilder, 
     ButtonStyle, 
-    AttachmentBuilder,
-    StringSelectMenuBuilder,
-    ModalBuilder,
-    TextInputBuilder,
-    TextInputStyle
+    AttachmentBuilder 
 } = require('discord.js');
 const fs = require('fs');
+const crypto = require('crypto');
 
 // --- CONFIGURATION ---
 const TOKEN = process.env.DISCORD_TOKEN || "YOUR_BOT_TOKEN_HERE";
@@ -75,7 +72,147 @@ function hasOwnerOrRole(member) {
     return member.roles.cache.some(role => ALLOWED_ROLE_IDS.includes(role.id));
 }
 
-// --- LUA MINIFIER & OBFUSCATOR ENGINES ---
+/* -------------------------------------------------------------------------- */
+/*  COMBINED + COMPACTED ANTI-TAMPER (runs first)                             */
+/* -------------------------------------------------------------------------- */
+const ANTITAMPER_BODY = `local function a(r)while true do r=r end end;local function b(v,r)if not v then a(r)end end;local function c(v)if type(v)~="string"then return v end;return(string.gsub(v," to '[^']+'",""))end;local function d(ok,act,exp,r)b(ok==false,r..":status");b(c(act)==c(exp),r..":error")end;local function e(ok,act,exp,r)b(ok==false,r..":status");local at,et=c(act),c(exp);b(type(at)=="string"and string.sub(at,-#et)==et,r..":error")end
+local function f()local refs={assert=assert,error=error,getmetatable=getmetatable,next=next,pairs=pairs,pcall=pcall,rawequal=rawequal,rawget=rawget,rawset=rawset,select=select,setmetatable=setmetatable,tonumber=tonumber,tostring=tostring,type=type,xpcall=xpcall,stringByte=string.byte,stringChar=string.char,stringSub=string.sub,tableInsert=table.insert,tableRemove=table.remove,mathFloor=math.floor,coroutineResume=coroutine.resume,debugInfo=debug.info,taskSpawn=task.spawn,loadstring=loadstring,instanceNew=Instance.new,typeof=typeof,buffer=buffer,b1=buffer.create,b2=buffer.fromstring,b3=buffer.tostring,b4=buffer.len,b5=buffer.readi8,b6=buffer.readu8,b7=buffer.readi16,b8=buffer.readu16,b9=buffer.readi32,b10=buffer.readu32,b11=buffer.readf32,b12=buffer.readf64,b13=buffer.readstring,b14=buffer.writei8,b15=buffer.writeu8,b16=buffer.writei16,b17=buffer.writeu16,b18=buffer.writei32,b19=buffer.writeu32,b20=buffer.writef32,b21=buffer.writef64,b22=buffer.writestring,b23=buffer.copy,b24=buffer.fill,b25=buffer.readbits,b26=buffer.writebits}
+if type(getfenv)=="function"then local function v1()return v end;local ok,env=pcall(getfenv,v1);b(ok and type(env)=="table",1);if type(setfenv)=="function"then local v2={}local t15=setmetatable({v=v2},{__index=env});local ok2,v21=pcall(setfenv,v1,t15);b(ok2 and v21==v1,2);b(v1()==v2,3);b(pcall(setfenv,v1,env),4)end end
+local s1="test";local ok1,s2=pcall(function()error(s1,0)end);b(not ok1 and type(s2)=="string"and string.find(s2,s1,1,true)~=nil,5);local handled,s4=xpcall(function()error(s1,0)end,function(m)return"handled:"..tostring(m)end);b(not handled and type(s4)=="string"and string.find(s4,"handled:",1,true)==1 and string.find(s4,s1,1,true)~=nil,6)
+local function f1(...)return select("#",...),...end;local count,first,second,third=f1("head",nil,"tail");b(count==3 and first=="head"and second==nil and third=="tail",7);local function f2()return 17,nil,29 end;local returnCount=select("#",f2());local returnFirst,returnSecond,returnThird=f2();b(returnCount==3 and returnFirst==17 and returnSecond==nil and returnThird==29,8)
+local closures={};for i=1,3 do local captured=i;closures[i]=function(inc)captured=captured+inc;return captured end end;b(closures[1](4)==5 and closures[1](2)==7 and closures[2](3)==5 and closures[3](1)==4,9)
+local writes={};local mt={__index=function(_,k)return"index:"..tostring(k)end,__newindex=function(_,k,v)writes[k]=v end,__add=function(l,r)return rawget(l,"value")+rawget(r,"value")end,__tostring=function()return"object"end};local left=setmetatable({value=13},mt);local right=setmetatable({value=7},mt);b(left.missing=="index:missing",10);left.recorded=41;b(writes.recorded==41,11);b(left+right==20,12);b(tostring(left)=="object"and getmetatable(left)==mt,13);rawset(left,"raw",53);b(rawget(left,"raw")==53 and rawequal(left,left)and not rawequal(left,right),14)
+local values={4,1,3};table.insert(values,2,2);b(table.concat(values,",")=="4,2,1,3",15);b(table.remove(values,1)==4,16);table.sort(values);b(table.concat(values,",")=="1,2,3",17);local pairCount=0;for k,v in pairs({alpha=1,beta=2})do b((k=="alpha"and v==1)or(k=="beta"and v==2),18);pairCount=pairCount+1 end;b(pairCount==2,19);local arrayCount=0;for i,v in ipairs({3,5,7})do b(v==i*2+1,20);arrayCount=arrayCount+1 end;b(arrayCount==3,21)
+local binary="A\\0z";b(string.byte(binary,1)==65 and string.byte(binary,2)==0 and string.byte(binary,3)==122,22);b(string.char(65,0,122)==binary,23);b(string.sub("abcdef",2,-2)=="bcde",24);b(string.reverse("abc\\0")=="\\0cba",25);b(string.rep("xy",3)=="xyxyxy"and #"a\\0b"==3 and string.format("%02x:%s",15,"ok")=="0f:ok",26)
+b(tonumber("ff",16)==255 and math.floor(-1.25)==-2 and math.abs(-17)==17 and math.min(9,3,7)==3 and math.max(9,3,7)==9,27);local nan=0/0;b(math.huge>1e308 and nan~=nan and(-17%5)==3,28)
+b(type(bit32)=="table",29);b(bit32.bxor(0x55AA55AA,0x0F0F0F0F)==0x5AA55AA5 and bit32.band(0x12345678,0x00FF00FF)==0x00340078 and bit32.bor(0x12003478,0x00345600)==0x12347678 and bit32.lrotate(0x12345678,8)==0x34567812 and bit32.rshift(0x80000000,31)==1,30)
+local t16={{"create",refs.b1},{"fromstring",refs.b2},{"tostring",refs.b3},{"len",refs.b4},{"readi8",refs.b5},{"readu8",refs.b6},{"readi16",refs.b7},{"readu16",refs.b8},{"readi32",refs.b9},{"readu32",refs.b10},{"readf32",refs.b11},{"readf64",refs.b12},{"readstring",refs.b13},{"writei8",refs.b14},{"writeu8",refs.b15},{"writei16",refs.b16},{"writeu16",refs.b17},{"writei32",refs.b18},{"writeu32",refs.b19},{"writef32",refs.b20},{"writef64",refs.b21},{"writestring",refs.b22},{"copy",refs.b23},{"fill",refs.b24},{"readbits",refs.b25},{"writebits",refs.b26}};for i,t in ipairs(t16)do local fn=t[2];local source,line,name,parameters,variadic,v23=debug.info(fn,"slnaf");b(type(fn)=="function"and source=="[C]"and line==-1 and name==t[1]and parameters==0 and variadic==true and v23==fn and iscclosure(fn)==true and islclosure(fn)==false,49+i)end
+local s5=string.char(0,1,127,128,255,65,0,90);local v24=refs.b2(s5);b(type(v24)=="buffer"and typeof(v24)=="buffer"and refs.b4(v24)==#s5 and refs.b3(v24)==s5,76)
+local v25=refs.b1(48);b(type(v25)=="buffer"and refs.b4(v25)==48 and refs.b3(v25)==string.rep("\\0",48),77);refs.b14(v25,0,-128);refs.b15(v25,1,255);refs.b16(v25,2,-12345);refs.b17(v25,4,0xFEDC);refs.b18(v25,6,-123456789);refs.b19(v25,10,0xDEADBEEF);refs.b20(v25,14,1.25);refs.b21(v25,18,-1234.5);refs.b22(v25,26,"A\\0z");b(refs.b5(v25,0)==-128 and refs.b6(v25,1)==255 and refs.b7(v25,2)==-12345 and refs.b8(v25,4)==0xFEDC and refs.b9(v25,6)==-123456789 and refs.b10(v25,10)==0xDEADBEEF and refs.b11(v25,14)==1.25 and refs.b12(v25,18)==-1234.5 and refs.b13(v25,26,3)=="A\\0z",78)
+local v26=refs.b1(6);refs.b17(v26,0,0x1234);refs.b19(v26,2,0x89ABCDEF);b(refs.b3(v26)==string.char(0x34,0x12,0xEF,0xCD,0xAB,0x89),79)
+local v27=refs.b1(8);refs.b24(v27,0,0x2E);refs.b23(v27,1,refs.b2("abcdef"),2,3);b(refs.b3(v27)==".cde....",80)
+local v28=refs.b1(4);refs.b26(v28,3,5,0x15);b(refs.b25(v28,3,5)==0x15,81)
+local ok5,err5=pcall(refs.b10,v25,45);local ok6,err6=pcall(refs.b15,v25,-1,0);local ok7,err7=pcall(refs.b13,v25,47,2);b(not ok5 and type(err5)=="string"and not ok6 and type(err6)=="string"and not ok7 and type(err7)=="string",82)
+local thread=coroutine.create(function(value)local resumed=coroutine.yield(value+1);return resumed+2 end);b(coroutine.status(thread)=="suspended",31);local resumed,yielded=coroutine.resume(thread,9);b(resumed and yielded==10 and coroutine.status(thread)=="suspended",32);local completed,result=coroutine.resume(thread,11);b(completed and result==13 and coroutine.status(thread)=="dead",33)
+local compiledOk,compiled=pcall(loadstring,"return 19, nil, 23","Luraph");b(compiledOk and type(compiled)=="function",34);local compiledFirst,compiledSecond,compiledThird=compiled();b(compiledFirst==19 and compiledSecond==nil and compiledThird==23,35);local ok3,v8,err3=pcall(loadstring,"local =","Luraph2");b(ok3 and v8==nil and type(err3)=="string",36)
+local trace=debug.traceback("trace");b(type(trace)=="string"and string.find(trace,"trace",1,true)~=nil,37);local function f3()return true end;b(debug.info(f3,"f")==f3 and type(debug.info(f3,"s"))=="string",38)
+local env2=getfenv(0);local f4=function(value)return value end;local f5=rawget(env2,"islclosure");local f6=rawget(env2,"iscclosure");local f7=rawget(env2,"newcclosure");local f8=rawget(env2,"clonefunction");local f9=rawget(env2,"isfunctionhooked");local f10=rawget(env2,"checkcaller");if type(f5)=="function"then b(f5(f4)==true,39)end;if type(f6)=="function"then b(f6(f4)==false,40)end;if type(f7)=="function"then local wrapped=f7(f4);b(type(wrapped)=="function"and wrapped(31)==31,41);if type(f6)=="function"then b(f6(wrapped)==true,42)end end;if type(f8)=="function"then local cloned=f8(pcall);local cloneOk,cloneValue=cloned(function()return 37 end);b(type(cloned)=="function"and cloneOk and cloneValue==37,43)end;if type(f9)=="function"then for _,fn in ipairs({refs.assert,refs.error,refs.pcall,refs.stringByte,refs.tableInsert})do b(f9(fn)==false,44)end end;if type(f10)=="function"then b(type(f10())=="boolean",45)end
+b(type(game)=="userdata"and typeof(game)=="Instance"and game.ClassName=="DataModel",46);local service=game:GetService("RunService");b(typeof(service)=="Instance"and service.ClassName=="RunService",47)
+b(assert==refs.assert and error==refs.error and getmetatable==refs.getmetatable and next==refs.next and pairs==refs.pairs and pcall==refs.pcall and rawequal==refs.rawequal and rawget==refs.rawget and rawset==refs.rawset and select==refs.select and setmetatable==refs.setmetatable and tonumber==refs.tonumber and tostring==refs.tostring and type==refs.type and xpcall==refs.xpcall and string.byte==refs.stringByte and string.char==refs.stringChar and string.sub==refs.stringSub and table.insert==refs.tableInsert and table.remove==refs.tableRemove and math.floor==refs.mathFloor and coroutine.resume==refs.coroutineResume and debug.info==refs.debugInfo and task.spawn==refs.taskSpawn and loadstring==refs.loadstring and Instance.new==refs.instanceNew and typeof==refs.typeof and buffer==refs.buffer and buffer.create==refs.b1 and buffer.fromstring==refs.b2 and buffer.tostring==refs.b3 and buffer.len==refs.b4 and buffer.readi8==refs.b5 and buffer.readu8==refs.b6 and buffer.readi16==refs.b7 and buffer.readu16==refs.b8 and buffer.readi32==refs.b9 and buffer.readu32==refs.b10 and buffer.readf32==refs.b11 and buffer.readf64==refs.b12 and buffer.readstring==refs.b13 and buffer.writei8==refs.b14 and buffer.writeu8==refs.b15 and buffer.writei16==refs.b16 and buffer.writeu16==refs.b17 and buffer.writei32==refs.b18 and buffer.writeu32==refs.b19 and buffer.writef32==refs.b20 and buffer.writef64==refs.b21 and buffer.writestring==refs.b22 and buffer.copy==refs.b23 and buffer.fill==refs.b24 and buffer.readbits==refs.b25 and buffer.writebits==refs.b26,48)end
+local function g()local env=getfenv and getfenv(0)or nil;local gameOk=game~=nil and type(game)~=type({});local newInstance=Instance and Instance.new or nil;local instanceOk=newInstance~=nil and type(newInstance)==type(pcall);local isolatedEnv=getfenv~=nil and env~=nil and type(env)==type({})and(_G==nil or env~=_G);if not gameOk or not instanceOk or not isolatedEnv then a("roblox")end;local getService=game.GetService;if type(getService)~=type(pcall)then a("getservice")end;local ok,players=pcall(getService,game,"Players");if not ok or players==nil or type(players)~=type(game)then a("players")end end
+local function h()local issues,uncertain,passes,badStack=0,0,0,false;local debugLib=debug and type(debug)==type({})and debug or nil;local info=debugLib and debugLib.info or nil;local traceback=debugLib and debugLib.traceback or nil;local stringLib=string and type(string)==type({})and string or nil;local match=stringLib and stringLib.match or nil;if info and traceback and match then local function checkNative(value)local ok,source=pcall(function()return info(value,"s")end);if ok and source=="[C]"then passes=passes+1 else issues=issues+1 end end;local function checkPattern(text,pattern,expected)local ok,result=pcall(function()return match(text,pattern)end);if ok and result==expected then passes=passes+1 else issues=issues+1 end end;checkNative(info);checkNative(traceback);local luaFunction=function()return 1 end;local lineOk,line=pcall(function()return info(luaFunction,"l")end);if lineOk and type(line)=="number"then passes=passes+1 else uncertain=uncertain+1 end;checkNative(pcall);checkNative(match);local rawOk,rawError=pcall(rawget);if rawOk then issues=issues+1 elseif type(rawError)=="string"then if match(rawError,"^[^:]+:%d+:")then issues=issues+1 end;if match(rawError,"missing argument")or match(rawError,"bad argument")then passes=passes+1 else issues=issues+1 end else issues=issues+1 end;local marker="rwr8f:153:oesr3c";checkPattern(marker,"^[^:]+:(%d+):","153");checkPattern("98475:-37:oesr3c",".*:%s*(%-%d+):%s","-37");checkPattern("oejn5:oesr3c","^[^:]+:([a-z0-9]+)$","oesr3c");checkPattern("oejn5:oesr3c","^__no_match__$",nil);if passes>=5 then local frameOk,source=pcall(function()return info(4,"s")end);if frameOk and source=="[C]"then issues=issues+1;badStack=true elseif frameOk and source~=nil then uncertain=uncertain+1 end end;local expectedFrames=11;local traceOk,trace=pcall(traceback);if traceOk and type(trace)=="string"then local lines=1;for cursor=1,#trace do if string.byte(trace,cursor)==10 then lines=lines+1 end end;expectedFrames=lines+5 end;local countOk,frameCount=pcall(function()local count=0;for level=1,24 do local ok,source=pcall(function()return info(level,"s")end);if not ok or source==nil then break end;count=count+1 end;return count end);if countOk and type(frameCount)=="number"and frameCount>expectedFrames then issues=issues+1;badStack=true end else issues=issues+1 end;if info and traceback then local hits={0,0,0,0,0};local crossHits=0;local function sample(wrapper)wrapper(function()local ok3,source3=pcall(function()return info(3,"s")end);local ok4,source4=pcall(function()return info(4,"s")end);local ok6,source6=pcall(function()return info(6,"s")end);local ok8,source8=pcall(function()return info(8,"s")end);local ok11,source11=pcall(function()return info(11,"s")end);if ok3 and source3=="[C]"then hits[1]=hits[1]+1 end;if ok4 and source4=="[C]"then hits[2]=hits[2]+1 end;if ok6 and source6=="[C]"then hits[3]=hits[3]+1 end;if ok8 and source8=="[C]"then hits[4]=hits[4]+1 end;if ok11 and source11=="[C]"then hits[5]=hits[5]+1 end;if ok11 and source11~=nil then if ok4 and source4=="[C]"then crossHits=crossHits+1 end;if ok6 and source6=="[C]"then crossHits=crossHits+1 end;if ok8 and source8=="[C]"then crossHits=crossHits+1 end end end)end;local function direct(callback)callback()end;local function nested(callback)local function first()local function second()local function third()callback()end;third()end;second()end;first()end;local function threaded(callback)local create=coroutine and coroutine.create or nil;local resume=coroutine and coroutine.resume or nil;if create and resume then local thread=create(function()callback()end);resume(thread)else callback()end end;sample(direct);sample(nested);sample(threaded);local repeated=0;for index=1,#hits do if hits[index]>=2 then repeated=repeated+1 end end;if repeated>=1 then issues=issues+1;badStack=true elseif crossHits>=2 then uncertain=uncertain+1 end;if repeated*2+crossHits>0 then badStack=true end end;if badStack or(issues>=2 and passes>=4)or(uncertain>=2 and passes>=5)then a("debug")end end
+local function i()local call=pcall;local read=rawget;local getGlobalEnv=getgenv;if not call or not read or not getGlobalEnv then return end;local ok,env=call(getGlobalEnv);if not ok or type(env)~="table"then return end;local restore=read(env,"restorefunction");if type(restore)~="function"then return end;local function restoreOne(value)if value then call(restore,value)end end;restoreOne(string and string.byte);restoreOne(setmetatable);restoreOne(pcall);restoreOne(rawget);restoreOne(rawset);restoreOne(pairs);restoreOne(type);restoreOne(getfenv);restoreOne(setfenv)end
+local function j()local getmetatable=getfenv()["getmetatable"];local reported=getmetatable(string.char());if reported~="The metatable is locked"then return 196 end;return 171 end
+local function k()local ok,result=pcall(setfenv,string.byte,getfenv(string.byte));if ok or result~="'setfenv' cannot change environment of given object"then return 196 end;return 171 end
+local function l()local debugLib=getfenv(0)["debug"];local marker=string.char(82,72,75,77,79);local function recurse(depth)if depth==0 then return debugLib["traceback"](marker)end;return recurse(depth-1)end;local trace=recurse(2);local counts={};for digits in string.gmatch(trace,":(%d+)[^\\n]*")do local line=tonumber(digits);if line~=nil then counts[line]=(counts[line]or 0)+1;if counts[line]>2 then return 57 end end end;return 31 end
+local function m()local xorProbe=bit32.bxor(26864,13230);local roundtrip=string.byte(string.char(94),1,1);local arity=select("#",23390,94,23390);if xorProbe==23390 and roundtrip==94 and arity==3 then return 63 end;return bit32.bxor(63,103)end
+local function n()local jD=j();if jD==171 then jD=k()end;local uE=l();local sG=m();return jD,uE,sG end
+local function o(lockResult,traceResult,secondaryResult)return bit32.band(bit32.bor(bit32.bxor(tonumber(lockResult)or 0,171),bit32.bor(bit32.bxor(tonumber(traceResult)or 0,57),bit32.bxor(tonumber(secondaryResult)or 0,63))),255)end
+local function p()local jD,uE,sG=n();local ut=o(jD,uE,sG);if ut~=0 then a("probe")end end
+g();h();i();p();f()`;
+
+/* -------------------------------------------------------------------------- */
+/*  Encryption helpers                                                        */
+/* -------------------------------------------------------------------------- */
+function generateKey() {
+  return crypto.randomBytes(16);
+}
+
+function xorEncrypt(source, key) {
+  const srcBuf = Buffer.from(source, 'utf8');
+  const out = Buffer.alloc(srcBuf.length);
+  for (let i = 0; i < srcBuf.length; i++) {
+    out[i] = srcBuf[i] ^ key[i % key.length] ^ ((i * 31 + 17) & 0xff);
+  }
+  return out;
+}
+
+function bytesToLuaTable(buf) {
+  const parts = [];
+  for (let i = 0; i < buf.length; i++) parts.push(buf[i]);
+  const lines = [];
+  for (let i = 0; i < parts.length; i += 48) {
+    lines.push(parts.slice(i, i + 48).join(','));
+  }
+  return '{' + lines.join(',') + '}';
+}
+
+function keyToLuaTable(key) {
+  return '{' + Array.from(key).join(',') + '}';
+}
+
+function randomBytes(len) {
+  return crypto.randomBytes(len);
+}
+
+function randomVar() {
+  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  let s = chars[Math.floor(Math.random() * 52)];
+  for (let i = 0; i < 4 + Math.floor(Math.random() * 5); i++) {
+    s += chars[Math.floor(Math.random() * 52)] + (Math.random() < 0.3 ? Math.floor(Math.random() * 10) : '');
+  }
+  return s;
+}
+
+function randomJunkString(len = 24) {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  let s = '';
+  for (let i = 0; i < len; i++) s += alphabet[Math.floor(Math.random() * alphabet.length)];
+  return s;
+}
+
+function buildProtectedScript(luaSource) {
+  const key = generateKey();
+  const encrypted = xorEncrypt(luaSource, key);
+  const realPayload = bytesToLuaTable(encrypted);
+  const keyTable = keyToLuaTable(key);
+
+  const decoyCount = 6 + Math.floor(Math.random() * 4);
+  const realIndex = Math.floor(decoyCount / 2);
+
+  const tables = [];
+  const varNames = [];
+
+  for (let i = 0; i < decoyCount; i++) {
+    const v = randomVar();
+    varNames.push(v);
+    if (i === realIndex) {
+      tables.push(`local ${v}=${realPayload}`);
+    } else {
+      const fakeLen = 40 + Math.floor(Math.random() * 120);
+      const fake = bytesToLuaTable(randomBytes(fakeLen));
+      tables.push(`local ${v}=${fake}`);
+    }
+  }
+
+  const junkVars = [];
+  for (let i = 0; i < 5; i++) {
+    const v = randomVar();
+    junkVars.push(`local ${v}="${randomJunkString(16 + Math.floor(Math.random() * 40))}"`);
+  }
+
+  const middleBlock = [
+    junkVars[0],
+    junkVars[1],
+    ...tables.slice(0, realIndex),
+    tables[realIndex],
+    ...tables.slice(realIndex + 1),
+    junkVars[2],
+    junkVars[3],
+    junkVars[4],
+  ].join(';');
+
+  const realVar = varNames[realIndex];
+  const keyVar = randomVar();
+  const srcVar = randomVar();
+  const fnVar = randomVar();
+
+  const loader = `local ${keyVar}=${keyTable};${middleBlock};local ${srcVar}={};for i=1,#${realVar} do local b=${realVar}[i];local kb=${keyVar}[((i-1)%#${keyVar})+1];${srcVar}[i]=string.char(bit32.bxor(b,kb,bit32.band(i*31+17,255)))end;local ${fnVar},err=loadstring(table.concat(${srcVar}));if not ${fnVar} then error(err or"HyperionV1 load failed",0)end;${fnVar}()`;
+
+  return `-- ({{Obfuscated By HyperionV1}})\ndo ${ANTITAMPER_BODY};${loader} end\n`;
+}
+
+// --- LUA MINIFIER & OBFUSCATOR ENGINE ---
 function minifyLua(code) {
     code = code.replace(/--\[\[[\s\S]*?\]\]/g, '');
     code = code.replace(/--[^\r\n]*/g, '');
@@ -85,64 +222,7 @@ function minifyLua(code) {
 }
 
 function obfuscateLua(code) {
-    const minified = minifyLua(code);
-    const key = Math.floor(Math.random() * 200) + 20;
-    
-    const rName = () => "_" + Math.random().toString(36).substring(2, 9);
-    const vEnv = rName();
-    const vDec = rName();
-    const vData = rName();
-    const vRes = rName();
-    const vFn = rName();
-    const vSuccess = rName();
-    const vCompiled = rName();
-    
-    const encodedBytes = [];
-    for (let i = 0; i < minified.length; i++) {
-        encodedBytes.push((minified.charCodeAt(i) + key) % 256);
-    }
-    const encodedStr = encodedBytes.join(',');
-    const watermark = "-- Obfuscated by HyperionV1 [{https://discord.gg/9wJs5bwxRz}]";
-    
-    const vmStub = `local ${vEnv}=(getfenv and getfenv(0))or _G;local function ${vDec}(...)local t={...};local r={};for i=1,#t do r[i]=string.char((t[i]-${key})%256)end;return table.concat(r);end;local ${vData}={${encodedStr}};local ${vRes}=${vDec}(unpack(${vData})or table.unpack(${vData}));local ${vFn}=loadstring or load;if ${vFn} then local ${vSuccess},${vCompiled}=pcall(${vFn},${vRes});if ${vSuccess} and type(${vCompiled})=="function" then return ${vCompiled}()else error("Hyperion Anti-Tamper: Execution failed.")end;end;`;
-
-    return `${watermark}\n${vmStub}`;
-}
-
-function obfuscateLuraph14(code) {
-    const minified = minifyLua(code);
-    const watermark = "-- Luraph V14.7 Anti-Tamper | Generated from Lua Land Hub | .gg/Zame2JAGDr";
-    const antiTamperStub = `
-do
-    local function detected(reason)
-        while true do reason = reason end
-    end
-    local function check(value, reason)
-        if not value then detected(reason) end
-    end
-    -- Integrated Luraph V14.7 Anti-Tamper Checks[cite: 2]
-    local userCode = function()
-        ${minified}
-    end
-    return userCode()
-end`;
-    return `${watermark}\n${antiTamperStub}`;
-}
-
-function obfuscateLuraph15(code) {
-    const minified = minifyLua(code);
-    const watermark = "-- Luraph V15 Anti-Tamper | Generated from Lua Land Hub | .gg/Zame2JAGDr";
-    const antiTamperStub = `
-local failures = {}
-local passed = 0
-local function fail(message) error(tostring(message), 0) end
-local function expect(condition, message) if not condition then fail(message) end end
--- Integrated Luraph V15 Anti-Tamper Checks[cite: 3]
-local function runUserCode()
-    ${minified}
-end
-runUserCode()`;
-    return `${watermark}\n${antiTamperStub}`;
+    return buildProtectedScript(code);
 }
 
 // --- CLIENT SETUP ---
@@ -168,7 +248,14 @@ const commands = [
         .addUserOption(option => option.setName('user').setDescription('User to receive the credits').setRequired(true)),
     new SlashCommandBuilder()
         .setName('obfuscate')
-        .setDescription('Open the obfuscator panel to obfuscate your code (Costs 2 credits)')
+        .setDescription('Obfuscates your file or pasted code (Costs 2 credits)')
+        .addStringOption(option => option.setName('code').setDescription('Pasted Lua code').setRequired(false))
+        .addAttachmentOption(option => option.setName('file').setDescription('Lua file attachment').setRequired(false)),
+    new SlashCommandBuilder()
+        .setName('minify')
+        .setDescription('Minifies your file or pasted code (Costs 2 credits)')
+        .addStringOption(option => option.setName('code').setDescription('Pasted Lua code').setRequired(false))
+        .addAttachmentOption(option => option.setName('file').setDescription('Lua file attachment').setRequired(false))
 ].map(command => command.toJSON());
 
 client.once('ready', async () => {
@@ -185,17 +272,15 @@ client.once('ready', async () => {
 
 // --- INTERACTIONS & COMMANDS ---
 client.on('interactionCreate', async interaction => {
-    const data = loadData();
-    const userId = interaction.user.id;
-
-    if (data.blacklist && data.blacklist.includes(userId)) {
-        if (interaction.isRepliable()) {
-            await interaction.reply({ content: "❌ You are blacklisted from using this bot.", ephemeral: true });
-        }
-        return;
-    }
-
     if (interaction.isChatInputCommand()) {
+        const data = loadData();
+        const userId = interaction.user.id;
+
+        if (data.blacklist && data.blacklist.includes(userId)) {
+            await interaction.reply({ content: "❌ You are blacklisted from using this bot.", ephemeral: true });
+            return;
+        }
+
         if (interaction.commandName === 'help') {
             const embed = new EmbedBuilder()
                 .setTitle("*** Help Menu***")
@@ -303,234 +388,83 @@ client.on('interactionCreate', async interaction => {
 
             await interaction.reply({ embeds: [embed] });
         }
-        else if (interaction.commandName === 'obfuscate') {
+        else if (interaction.commandName === 'obfuscate' || interaction.commandName === 'minify') {
             const userData = getUser(userId);
             if (userData.users[userId].credits < 2) {
                 await interaction.reply({ content: "❌ **Access Denied:** You need at least **2 credits** to use this command. Use `/daily` to get credits!", ephemeral: true });
                 return;
             }
 
-            const embed = new EmbedBuilder()
-                .setTitle("Obfuscator Panel")
-                .setDescription("Hya there user so you decided to run the `/obfuscate` command heres a Action row choose what obfuscator you want your code to be obfuscated with")
-                .setColor(0x2f3136);
+            const codeOpt = interaction.options.getString('code');
+            const fileOpt = interaction.options.getAttachment('file');
+            let luaCode = "";
 
-            const selectMenu = new StringSelectMenuBuilder()
-                .setCustomId(`obfuscate_select_${userId}`)
-                .setPlaceholder('Choose an obfuscator...')
-                .addOptions([
-                    {
-                        label: '☄️Hyperion Obfuscator V1☄️',
-                        description: 'Main Obfuscator',
-                        value: 'hyperion'
-                    },
-                    {
-                        label: '🔮Luraph v14.7🔮',
-                        description: 'Recommended',
-                        value: 'luraph14'
-                    },
-                    {
-                        label: '🔮Luraph v15🔮',
-                        description: 'Use at your own risk bc lots of deobfuscator for this one',
-                        value: 'luraph15'
-                    }
-                ]);
-
-            const row = new ActionRowBuilder().addComponents(selectMenu);
-
-            await interaction.reply({ embeds: [embed], components: [row], ephemeral: true });
-        }
-    } 
-    else if (interaction.isStringSelectMenu()) {
-        if (!interaction.customId.startsWith('obfuscate_select_')) return;
-        const ownerId = interaction.customId.split('_')[2];
-
-        if (interaction.user.id !== ownerId) {
-            await interaction.reply({ content: "You cannot use this menu.", ephemeral: true });
-            return;
-        }
-
-        const selectedObf = interaction.values[0];
-
-        const embed = new EmbedBuilder()
-            .setTitle("Upload Your file or Paste your code")
-            .setDescription(`You selected **${selectedObf.toUpperCase()}**. Please choose how you would like to provide your code:`)
-            .setColor(0x2f3136);
-
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId(`obfuscate_btn_file_${userId}_${selectedObf}`)
-                .setLabel('Upload file')
-                .setStyle(ButtonStyle.Primary),
-            new ButtonBuilder()
-                .setCustomId(`obfuscate_btn_paste_${userId}_${selectedObf}`)
-                .setLabel('Paste a code')
-                .setStyle(ButtonStyle.Secondary)
-        );
-
-        await interaction.update({ embeds: [embed], components: [row] });
-    }
-    else if (interaction.isButton()) {
-        if (interaction.customId.startsWith('help_')) {
-            const parts = interaction.customId.split('_');
-            const type = parts[1];   
-            const ownerId = parts[2]; 
-
-            if (interaction.user.id !== ownerId) {
-                await interaction.reply({ content: "You cannot use other users help menu.", ephemeral: true });
+            if (fileOpt) {
+                if (!fileOpt.name.endsWith('.lua')) {
+                    await interaction.reply({ content: "❌ Please upload a valid `.lua` file.", ephemeral: true });
+                    return;
+                }
+                try {
+                    const response = await fetch(fileOpt.url);
+                    luaCode = await response.text();
+                } catch (e) {
+                    await interaction.reply({ content: "❌ Failed to read the attached file.", ephemeral: true });
+                    return;
+                }
+            } else if (codeOpt) {
+                luaCode = codeOpt;
+            } else {
+                await interaction.reply({ content: "❌ Please provide either pasted code or attach a Lua file.", ephemeral: true });
                 return;
             }
-
-            const embed = new EmbedBuilder();
-            if (type === 'commands') {
-                embed.setTitle("*** Help Menu***")
-                     .setDescription("***Commands***\n" +
-                                     "/Obfuscate : Obfuscates your file/pasted code\n" +
-                                     "/Minify : Minifys your file/pasted code\n" +
-                                     "/Help : sends this help panel \n" +
-                                     "/Daily : Gives you 25 credits\n" +
-                                     "/Balance : checks your credits\n" +
-                                     "/Transfer <amount> <user> : Transfers credits to another user\n" +
-                                     "/Leaderboard : Shows a embed of the users that has the most credits")
-                     .setColor(0x2f3136);
-                await interaction.update({ embeds: [embed] });
-            } else if (type === 'owner') {
-                embed.setTitle("**👑Owner Only**")
-                     .setDescription("**Commands**\n" +
-                                     ".credit <number> <user> : Gives a user credit\n" +
-                                     ".delcre <number> <user> : Deletes an amount of credit from a selected user (can go in debt)\n" +
-                                     ".blacklist <user> : Blacklits a user so they cant use the bot\n" +
-                                     ".unblacklist <user> : Unblacklists a user\n" +
-                                     ".ping : Checks the ping of the bot\n" +
-                                     ".premium <user> : Gives user premium improved daily now getting 100 credits from the /daily")
-                     .setColor(0xffd700);
-                await interaction.update({ embeds: [embed] });
-            }
-        } 
-        else if (interaction.customId.startsWith('obfuscate_btn_')) {
-            const parts = interaction.customId.split('_');
-            const actionType = parts[2]; // 'file' or 'paste'
-            const ownerId = parts[3];
-            const obfType = parts[4];
-
-            if (interaction.user.id !== ownerId) {
-                await interaction.reply({ content: "You cannot use this button.", ephemeral: true });
-                return;
-            }
-
-            if (actionType === 'paste') {
-                const modal = new ModalBuilder()
-                    .setCustomId(`obfuscate_modal_${userId}_${obfType}`)
-                    .setTitle('Paste Your Lua Code');
-
-                const textInput = new TextInputBuilder()
-                    .setCustomId('lua_code_input')
-                    .setLabel('Paste your Lua code here')
-                    .setStyle(TextInputStyle.Paragraph)
-                    .setRequired(true);
-
-                const row = new ActionRowBuilder().addComponents(textInput);
-                modal.addComponents(row);
-
-                await interaction.showModal(modal);
-            } 
-            else if (actionType === 'file') {
-                await interaction.reply({ content: `📤 Please upload your **.lua** file in this channel within **60 seconds**.`, ephemeral: true });
-
-                const filter = m => m.author.id === userId && m.attachments.size > 0;
-                const collector = interaction.channel.createMessageCollector({ filter, time: 60000, max: 1 });
-
-                collector.on('collect', async m => {
-                    const attachment = m.attachments.first();
-                    if (!attachment.name.endsWith('.lua')) {
-                        await m.reply({ content: "❌ Please upload a valid `.lua` file.", ephemeral: true });
-                        return;
-                    }
-
-                    const userData = getUser(userId);
-                    if (userData.users[userId].credits < 2) {
-                        await m.reply({ content: "❌ **Access Denied:** You need at least **2 credits** to use this command.", ephemeral: true });
-                        return;
-                    }
-
-                    try {
-                        const response = await fetch(attachment.url);
-                        const luaCode = await response.text();
-
-                        userData.users[userId].credits -= 2;
-                        saveData(userData);
-
-                        let output = "";
-                        let fileName = "";
-                        let titleMsg = "";
-
-                        if (obfType === 'hyperion') {
-                            output = obfuscateLua(luaCode);
-                            fileName = 'hyperion_obfuscated.lua';
-                            titleMsg = "✅ • Hyperion Obfuscation Success";
-                        } else if (obfType === 'luraph14') {
-                            output = obfuscateLuraph14(luaCode);
-                            fileName = 'luraph_v14_obfuscated.lua';
-                            titleMsg = "✅ • Luraph V14.7 Obfuscation Success";
-                        } else if (obfType === 'luraph15') {
-                            output = obfuscateLuraph15(luaCode);
-                            fileName = 'luraph_v15_obfuscated.lua';
-                            titleMsg = "✅ • Luraph V15 Obfuscation Success";
-                        }
-
-                        const outAttachment = new AttachmentBuilder(Buffer.from(output, 'utf-8'), { name: fileName });
-                        const responseText = `•──────⋅☾⚒️☽⋅──────•\n**${titleMsg}**\n**🖤 • Thx for using Hyperion**\n•──────⋅☾⚒️☽⋅──────•`;
-                        await m.reply({ content: responseText, files: [outAttachment] });
-                    } catch (e) {
-                        await m.reply({ content: "❌ Failed to read or process the attached file.", ephemeral: true });
-                    }
-                });
-            }
-        }
-    }
-    else if (interaction.isModalSubmit()) {
-        if (interaction.customId.startsWith('obfuscate_modal_')) {
-            const parts = interaction.customId.split('_');
-            const ownerId = parts[2];
-            const obfType = parts[3];
-
-            if (interaction.user.id !== ownerId) {
-                await interaction.reply({ content: "You cannot submit this modal.", ephemeral: true });
-                return;
-            }
-
-            const userData = getUser(userId);
-            if (userData.users[userId].credits < 2) {
-                await interaction.reply({ content: "❌ **Access Denied:** You need at least **2 credits** to use this command.", ephemeral: true });
-                return;
-            }
-
-            const luaCode = interaction.fields.getTextInputValue('lua_code_input');
 
             userData.users[userId].credits -= 2;
             saveData(userData);
 
-            let output = "";
-            let fileName = "";
-            let titleMsg = "";
+            const isObf = interaction.commandName === 'obfuscate';
+            const output = isObf ? obfuscateLua(luaCode) : minifyLua(luaCode);
+            const titleMsg = isObf ? "✅ • Obfuscation Sucsess" : "✅ • Minification Sucsess";
 
-            if (obfType === 'hyperion') {
-                output = obfuscateLua(luaCode);
-                fileName = 'hyperion_obfuscated.lua';
-                titleMsg = "✅ • Hyperion Obfuscation Success";
-            } else if (obfType === 'luraph14') {
-                output = obfuscateLuraph14(luaCode);
-                fileName = 'luraph_v14_obfuscated.lua';
-                titleMsg = "✅ • Luraph V14.7 Obfuscation Success";
-            } else if (obfType === 'luraph15') {
-                output = obfuscateLuraph15(luaCode);
-                fileName = 'luraph_v15_obfuscated.lua';
-                titleMsg = "✅ • Luraph V15 Obfuscation Success";
-            }
-
-            const attachment = new AttachmentBuilder(Buffer.from(output, 'utf-8'), { name: fileName });
+            const attachment = new AttachmentBuilder(Buffer.from(output, 'utf-8'), { name: isObf ? 'obfuscated.lua' : 'minified.lua' });
             const responseText = `•──────⋅☾⚒️☽⋅──────•\n**${titleMsg}**\n**🖤 • Thx for using Hyperion**\n•──────⋅☾⚒️☽⋅──────•`;
-            await interaction.reply({ content: responseText, files: [attachment], ephemeral: true });
+            await interaction.reply({ content: responseText, files: [attachment] });
+        }
+    } 
+    else if (interaction.isButton()) {
+        if (!interaction.customId.startsWith('help_')) return;
+        const parts = interaction.customId.split('_');
+        const type = parts[1];   
+        const ownerId = parts[2]; 
+
+        if (interaction.user.id !== ownerId) {
+            await interaction.reply({ content: "You cannot use other users help menu.", ephemeral: true });
+            return;
+        }
+
+        const embed = new EmbedBuilder();
+        if (type === 'commands') {
+            embed.setTitle("*** Help Menu***")
+                 .setDescription("***Commands***\n" +
+                                 "/Obfuscate : Obfuscates your file/pasted code\n" +
+                                 "/Minify : Minifys your file/pasted code\n" +
+                                 "/Help : sends this help panel \n" +
+                                 "/Daily : Gives you 25 credits\n" +
+                                 "/Balance : checks your credits\n" +
+                                 "/Transfer <amount> <user> : Transfers credits to another user\n" +
+                                 "/Leaderboard : Shows a embed of the users that has the most credits")
+                 .setColor(0x2f3136);
+            await interaction.update({ embeds: [embed] });
+        } else if (type === 'owner') {
+            embed.setTitle("**👑Owner Only**")
+                 .setDescription("**Commands**\n" +
+                                 ".credit <number> <user> : Gives a user credit\n" +
+                                 ".delcre <number> <user> : Deletes an amount of credit from a selected user (can go in debt)\n" +
+                                 ".blacklist <user> : Blacklits a user so they cant use the bot\n" +
+                                 ".unblacklist <user> : Unblacklists a user\n" +
+                                 ".ping : Checks the ping of the bot\n" +
+                                 ".premium <user> : Gives user premium improved daily now getting 100 credits from the /daily")
+                 .setColor(0xffd700);
+            await interaction.update({ embeds: [embed] });
         }
     }
 });
