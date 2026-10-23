@@ -593,9 +593,26 @@ client.on('interactionCreate', async interaction => {
             saveData(userData);
             const output = minifyLua(luaCode);
             const attachment = new AttachmentBuilder(Buffer.from(output, 'utf-8'), { name: 'minified.lua' });
+            const outputPreview = output.split(/\r?\n/).slice(0, 10).join('\n').slice(0, 900) || '(empty output)';
+            const successDescription = [
+                '•────────────⋅☾⚒️☽⋅────────────•',
+                '',
+                '✅ • **Minification Sucsess**',
+                '🖤 • Thx for using Hyperiion',
+                '⚒️ • Output preview',
+                '```\n' + outputPreview + '\n```',
+                '👥 • +1 Vouch = 100 credits',
+                '📜 • Check Out the Rule\'s',
+                '⚠️ • If there any bug Report it immidiently any troll report will result in a ban',
+                '•────────────⋅☾⚒️☽⋅────────────•'
+            ].join('\n');
+            const successEmbed = new EmbedBuilder()
+                .setDescription(successDescription.slice(0, 4096))
+                .setColor(0xFFFFFF);
             await interaction.reply({
-                content: '•──────⋅☾⚒️☽⋅──────•\n**✅ • Minification Success**\n**🖤 • Thx for using Hyperion**\n•──────⋅☾⚒️☽⋅──────•',
-                files: [attachment]
+                embeds: [successEmbed],
+                files: [attachment],
+                allowedMentions: { parse: [] }
             });
         }
     } 
@@ -615,7 +632,7 @@ client.on('interactionCreate', async interaction => {
                 const watermarkInput = new TextInputBuilder()
                     .setCustomId('watermark_text')
                     .setLabel('Type your watermark')
-                    .setPlaceholder('Example = Obfuscated by User')
+                    .setPlaceholder('Obfuscated by LunarScripts')
                     .setStyle(TextInputStyle.Short)
                     .setMaxLength(150)
                     .setRequired(true);
@@ -689,13 +706,33 @@ client.on('interactionCreate', async interaction => {
                 output = buildPortableEncryptedScript(minifyLua(session.code));
             }
             output = applyWatermark(output, session.settings);
-            // Remove empty lines and trim generated lines to keep the output compact without
-            // joining Lua comments and code onto the same line.
-            output = output.split(/\r?\n/).map(line => line.trim()).filter(Boolean).join('\n');
+            // Intense VM mode can emit a multi-line template. Collapse its generated statement
+            // separators to semicolons so the final file is one physical line. Convert a leading
+            // line-comment watermark to a block comment first so it cannot comment out the script.
+            if (session.settings.intense) {
+                output = output.replace(/^--([^\r\n]*)\r?\n/, '--[[$1]];');
+                output = output.split(/\r?\n/).map(line => line.trim()).filter(Boolean).join(';');
+                output = output.replace(/;{2,}/g, ';').replace(/^;+|;+$/g, '');
+            } else {
+                output = output.split(/\r?\n/).map(line => line.trim()).filter(Boolean).join('\n');
+            }
             const attachment = new AttachmentBuilder(Buffer.from(output, 'utf-8'), { name: session.settings.language === 'luau' ? 'obfuscated.luau' : 'obfuscated.lua' });
             pendingObfuscations.delete(ownerId);
+            const outputPreview = output.split(/\r?\n/).slice(0, 10).join('\n').slice(0, 900) || '(empty output)';
+            const successDescription = [
+                '•────────────⋅☾⚒️☽⋅────────────•',
+                '',
+                '✅ • **Obfuscation Success**',
+                '🖤 • Thx for using Hyperiion',
+                '⚒️ • Output preview',
+                '```\n' + outputPreview + '\n```',
+                '👥 • +1 Vouch = 100 credits',
+                '📜 • Check Out the Rule\'s',
+                '⚠️ • If there any bug Report it immidiently any troll report will result in a ban',
+                '•────────────⋅☾⚒️☽⋅────────────•'
+            ].join('\n');
             const successEmbed = new EmbedBuilder()
-                .setDescription('•────────────⋅☾⚒️☽⋅────────────•\n\n✅ • **Obfuscation Success**\n🖤 • Thx for using Hyperion\n ⚒️ • Support us by Vouching in the Vouching channel\n•────────────⋅☾⚒️☽⋅────────────•')
+                .setDescription(successDescription.slice(0, 4096))
                 .setColor(0xFFFFFF);
             // Edit the existing public panel once. Do not reply/followUp/send separately,
             // so the attachment and single success embed stay in one public message.
