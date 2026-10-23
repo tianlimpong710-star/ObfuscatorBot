@@ -299,7 +299,7 @@ function makeObfuscationEmbed(session) {
                 `• Output language: ${session.settings.language === 'luau' ? 'LuaU (Roblox)' : 'Lua'}`
         })
         .setFooter({ text: 'Use the dropdown menus below the embed to change options.' })
-        .setColor(0x5865F2);
+        .setColor(0xFFFFFF);
 }
 
 function buildPortableEncryptedScript(code) {
@@ -347,7 +347,8 @@ const commands = [
         .setName('obfuscate')
         .setDescription('Obfuscates your file or pasted code (Costs 2 credits)')
         .addStringOption(option => option.setName('code').setDescription('Pasted Lua code').setRequired(false))
-        .addAttachmentOption(option => option.setName('file').setDescription('Lua file attachment').setRequired(false)),
+        .addAttachmentOption(option => option.setName('file').setDescription('Lua file attachment').setRequired(false))
+        .addStringOption(option => option.setName('url').setDescription('Raw URL containing downloadable Lua text').setRequired(false)),
     new SlashCommandBuilder()
         .setName('minify')
         .setDescription('Minifies your file or pasted code (Costs 2 credits)')
@@ -355,16 +356,20 @@ const commands = [
         .addAttachmentOption(option => option.setName('file').setDescription('Lua file attachment').setRequired(false))
 ].map(command => command.toJSON());
 
-client.once('ready', async () => {
+client.once('ready', () => {
     console.log(`Logged in as ${client.user.tag}!`);
-    const rest = new REST({ version: '10' }).setToken(TOKEN);
-    try {
-        console.log('Registering slash commands...');
-        await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
-        console.log('Successfully registered all application slash commands!');
-    } catch (error) {
-        console.error('Error registering slash commands:', error);
+
+    // Global slash-command registration can take a while and is not needed on every restart.
+    // Set REGISTER_COMMANDS=true in Railway only when you add/change slash commands.
+    if (process.env.REGISTER_COMMANDS !== 'true') {
+        console.log('Skipping slash-command sync (commands are already registered).');
+        return;
     }
+
+    const rest = new REST({ version: '10' }).setToken(TOKEN);
+    rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands })
+        .then(() => console.log('Successfully registered all application slash commands!'))
+        .catch(error => console.error('Error registering slash commands:', error));
 });
 
 // --- INTERACTIONS & COMMANDS ---
@@ -382,14 +387,14 @@ client.on('interactionCreate', async interaction => {
             const embed = new EmbedBuilder()
                 .setTitle("*** Help Menu***")
                 .setDescription("***Commands***\n" +
-                                "/Obfuscate : Obfuscates your file/pasted code\n" +
+                                "/Obfuscate : Obfuscates a raw URL, file, or pasted code\n" +
                                 "/Minify : Minifys your file/pasted code\n" +
                                 "/Help : sends this help panel \n" +
                                 "/Daily : Gives you 25 credits\n" +
                                 "/Balance : checks your credits\n" +
                                 "/Transfer <amount> <user> : Transfers credits to another user\n" +
                                 "/Leaderboard : Shows a embed of the users that has the most credits")
-                .setColor(0x2f3136);
+                .setColor(0xFFFFFF);
 
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId(`help_commands_${userId}`).setLabel('Commands').setStyle(ButtonStyle.Primary),
@@ -481,7 +486,7 @@ client.on('interactionCreate', async interaction => {
             const embed = new EmbedBuilder()
                 .setTitle("**LeaderBoard**")
                 .setDescription(description)
-                .setColor(0xffd700);
+                .setColor(0xFFFFFF);
 
             await interaction.reply({ embeds: [embed] });
         }
@@ -494,9 +499,57 @@ client.on('interactionCreate', async interaction => {
 
             const codeOpt = interaction.options.getString('code');
             const fileOpt = interaction.options.getAttachment('file');
+            const urlOpt = interaction.options.getString('url');
             let luaCode = "";
 
-            if (fileOpt) {
+            if (urlOpt) {
+                let parsedUrl;
+                try {
+                    parsedUrl = new URL(urlOpt);
+                } catch (_) {
+                    parsedUrl = null;
+                }
+
+                // Accept only known raw-text endpoints; reject ordinary pages and other hosts.
+                const host = parsedUrl?.hostname.toLowerCase();
+                const path = parsedUrl?.pathname || '';
+                const isRawLink = parsedUrl && parsedUrl.protocol === 'https:' &&
+                    !parsedUrl.username && !parsedUrl.password &&
+                    ((host === 'pastebin.com' && /^\/raw\/[A-Za-z0-9]+\/?$/.test(path)) ||
+                     (host === 'pastefy.app' && /^\/raw\/[A-Za-z0-9_-]+\/?$/.test(path)) ||
+                     (host === 'api.rubis.com' && /^\/raw\/[A-Za-z0-9._/-]+$/.test(path)) ||
+                     (host === 'raw.githubuser.com' && /^\/[A-Za-z0-9._/-]+$/.test(path)) ||
+                     (host === 'raw.githubusercontent.com' && /^\/[A-Za-z0-9._/-]+$/.test(path)));
+
+                if (!isRawLink) {
+                    const errorEmbed = new EmbedBuilder()
+                        .setTitle('Error')
+                        .setDescription('Link/Url isnt a raw link containing downloadable text')
+                        .setColor(0xFFFFFF);
+                    await interaction.reply({ embeds: [errorEmbed], ephemeral: true });
+                    return;
+                }
+
+                try {
+                    const response = await fetch(parsedUrl.href, {
+                        signal: AbortSignal.timeout(12000),
+                        headers: { 'User-Agent': 'HyperionBot/1.0' }
+                    });
+                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                    const declaredLength = Number(response.headers.get('content-length') || 0);
+                    if (declaredLength > 1_000_000) throw new Error('Remote text is too large');
+                    luaCode = await response.text();
+                    if (Buffer.byteLength(luaCode, 'utf8') > 1_000_000) throw new Error('Remote text is too large');
+                    if (!luaCode.trim()) throw new Error('Remote text is empty');
+                } catch (e) {
+                    const errorEmbed = new EmbedBuilder()
+                        .setTitle('Error')
+                        .setDescription('Could not download text from that raw URL. Check that the link exists and is publicly accessible.')
+                        .setColor(0xFFFFFF);
+                    await interaction.reply({ embeds: [errorEmbed], ephemeral: true });
+                    return;
+                }
+            } else if (fileOpt) {
                 if (!fileOpt.name.endsWith('.lua')) {
                     await interaction.reply({ content: "❌ Please upload a valid `.lua` file.", ephemeral: true });
                     return;
@@ -511,7 +564,7 @@ client.on('interactionCreate', async interaction => {
             } else if (codeOpt) {
                 luaCode = codeOpt;
             } else {
-                await interaction.reply({ content: "❌ Please provide either pasted code or attach a Lua file.", ephemeral: true });
+                await interaction.reply({ content: "❌ Please provide a raw URL, pasted code, or attach a Lua file.", ephemeral: true });
                 return;
             }
 
@@ -557,7 +610,7 @@ client.on('interactionCreate', async interaction => {
                 const watermarkInput = new TextInputBuilder()
                     .setCustomId('watermark_text')
                     .setLabel('Type your watermark')
-                    .setPlaceholder('Text Example = Obfuscated by User!')
+                    .setPlaceholder('Obfuscated by LunarScripts')
                     .setStyle(TextInputStyle.Short)
                     .setMaxLength(150)
                     .setRequired(true);
@@ -637,7 +690,8 @@ client.on('interactionCreate', async interaction => {
             const attachment = new AttachmentBuilder(Buffer.from(output, 'utf-8'), { name: session.settings.language === 'luau' ? 'obfuscated.luau' : 'obfuscated.lua' });
             pendingObfuscations.delete(ownerId);
             const successEmbed = new EmbedBuilder()
-                .setDescription('•──────⋅☾⚒️☽⋅──────•\n\n✅ **Obfuscation Success**\n🖤 Thx for using Hyperion\n\n•──────⋅☾⚒️☽⋅──────•');
+                .setDescription('•──────⋅☾⚒️☽⋅──────•\n\n✅ **Obfuscation Success**\n🖤 Thx for using Hyperion\n\n•──────⋅☾⚒️☽⋅──────•')
+                .setColor(0xFFFFFF);
             await interaction.update({
                 content: '',
                 embeds: [successEmbed],
@@ -660,14 +714,14 @@ client.on('interactionCreate', async interaction => {
         if (type === 'commands') {
             embed.setTitle("*** Help Menu***")
                  .setDescription("***Commands***\n" +
-                                 "/Obfuscate : Obfuscates your file/pasted code\n" +
+                                 "/Obfuscate : Obfuscates a raw URL, file, or pasted code\n" +
                                  "/Minify : Minifys your file/pasted code\n" +
                                  "/Help : sends this help panel \n" +
                                  "/Daily : Gives you 25 credits\n" +
                                  "/Balance : checks your credits\n" +
                                  "/Transfer <amount> <user> : Transfers credits to another user\n" +
                                  "/Leaderboard : Shows a embed of the users that has the most credits")
-                 .setColor(0x2f3136);
+                 .setColor(0xFFFFFF);
             await interaction.update({ embeds: [embed] });
         } else if (type === 'owner') {
             embed.setTitle("**👑Owner Only**")
@@ -678,7 +732,7 @@ client.on('interactionCreate', async interaction => {
                                  ".unblacklist <user> : Unblacklists a user\n" +
                                  ".ping : Checks the ping of the bot\n" +
                                  ".premium <user> : Gives user premium improved daily now getting 100 credits from the /daily")
-                 .setColor(0xffd700);
+                 .setColor(0xFFFFFF);
             await interaction.update({ embeds: [embed] });
         }
     }
