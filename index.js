@@ -867,7 +867,15 @@ client.on('messageCreate', async message => {
         const uid = message.author.id;
         if ((data.blacklist || []).includes(uid)) { await message.reply('❌ You are blacklisted from using this bot.'); return; }
         if (command === 'help') {
-            await message.reply({ embeds: [new EmbedBuilder().setColor(0xFFFFFF).setDescription(`**Slash Commands**\n/help\n/daily\n/balance\n/leaderboard\n/transfer <amount> <@user>\n/obfuscate <code> or <file> or <url>\n/minify <code> or <file> or <url>\n\n**Prefix's**\n.help\n.daily\n.balance\n.leaderboard\n.transfer <amount> <@user>\n.obfuscate <code> or <file> or <url>\n.minify <code> or <file> or <url>`)] });;
+            const helpEmbed = new EmbedBuilder()
+                .setColor(0xFFFFFF)
+                .setTitle('Help Menu')
+                .setDescription(`**Slash Commands**\n/help\n/daily\n/balance\n/leaderboard\n/transfer <amount> <@user>\n/obfuscate <code> or <file> or <url>\n/minify <code> or <file> or <url>\n\n**Prefix Commands**\n.help\n.daily\n.balance\n.leaderboard\n.transfer <amount> <@user>\n.obfuscate <code> or <file> or <url>\n.minify <code> or <file> or <url>`);
+            const helpButtons = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId(`help_commands_${uid}`).setLabel('Commands').setStyle(ButtonStyle.Primary),
+                new ButtonBuilder().setCustomId(`help_owner_${uid}`).setLabel('Owner Only').setStyle(ButtonStyle.Secondary)
+            );
+            await message.reply({ embeds: [helpEmbed], components: [helpButtons] });
             return;
         }
         if (command === 'daily') {
