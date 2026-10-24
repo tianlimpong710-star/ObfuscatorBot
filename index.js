@@ -18,6 +18,60 @@ const {
 const fs = require('fs');
 const crypto = require('crypto');
 
+// --- STARTUP INTEGRITY / CONFIGURATION GUARDS ---
+// Set BOT_SOURCE_SHA256 to the SHA-256 hash of this deployed index.js file.
+// Keep that value in your hosting provider's environment settings, not in this file.
+// If the source changes unexpectedly, the bot refuses to start.
+function verifySourceIntegrity() {
+    const expected = process.env.BOT_SOURCE_SHA256;
+    if (!expected) {
+        console.warn('[SECURITY] BOT_SOURCE_SHA256 is not set; source integrity verification is disabled.');
+        return;
+    }
+
+    let actual;
+    try {
+        actual = crypto.createHash('sha256').update(fs.readFileSync(__filename)).digest('hex');
+    } catch (error) {
+        console.error('[SECURITY] Unable to read the bot source for integrity verification:', error.message);
+        process.exit(1);
+    }
+
+    if (!/^[a-f0-9]{64}$/i.test(expected) || actual.toLowerCase() !== expected.toLowerCase()) {
+        console.error('[SECURITY] Source integrity check failed. The deployed index.js does not match BOT_SOURCE_SHA256.');
+        process.exit(1);
+    }
+
+    console.log('[SECURITY] Source integrity check passed.');
+}
+
+function validateStartupConfig() {
+    if (!TOKEN || TOKEN === 'YOUR_BOT_TOKEN_HERE') {
+        console.error('[CONFIG] Set DISCORD_TOKEN in your hosting environment before starting the bot.');
+        process.exit(1);
+    }
+
+    if (!CLIENT_ID || CLIENT_ID === 'YOUR_CLIENT_ID_HERE') {
+        console.error('[CONFIG] Set CLIENT_ID in your hosting environment before starting the bot.');
+        process.exit(1);
+    }
+
+    if (!/^\d{17,20}$/.test(String(PRIMARY_OWNER_ID)) || PRIMARY_OWNER_ID === '123456789012345678') {
+        console.error('[CONFIG] Replace PRIMARY_OWNER_ID with your real Discord user ID.');
+        process.exit(1);
+    }
+}
+
+// These handlers log unexpected failures without exposing secrets to Discord users.
+process.on('unhandledRejection', reason => {
+    console.error('[PROCESS] Unhandled promise rejection:', reason);
+});
+process.on('uncaughtException', error => {
+    console.error('[PROCESS] Uncaught exception:', error);
+    process.exit(1);
+});
+
+
 // --- CONFIGURATION ---
 const TOKEN = process.env.DISCORD_TOKEN || "YOUR_BOT_TOKEN_HERE";
 const CLIENT_ID = process.env.CLIENT_ID || "YOUR_CLIENT_ID_HERE";
@@ -36,12 +90,13 @@ const MAX_CREDITS = 999999999999999999999999999999999999999999999999999999; // M
 // --- DATABASE HELPERS ---
 function loadData() {
     if (!fs.existsSync(DATA_FILE)) {
-        return { users: {}, blacklist: [] };
+        return { users: {}, blacklist: [], keys: {} };
     }
     try {
         const data = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
         if (!data.users) data.users = {};
         if (!data.blacklist) data.blacklist = [];
+        if (!data.keys || typeof data.keys !== 'object') data.keys = {};
         
         // Sanitize existing user credits to prevent null/Infinity issues
         for (const userId in data.users) {
@@ -53,7 +108,7 @@ function loadData() {
         }
         return data;
     } catch (e) {
-        return { users: {}, blacklist: [] };
+        return { users: {}, blacklist: [], keys: {} };
     }
 }
 
@@ -68,6 +123,42 @@ function getUser(userId) {
         saveData(data);
     }
     return data;
+}
+
+// A claimed, unexpired key grants access to paid bot features without spending credits.
+function hasActiveKeyAccess(userId, data = loadData()) {
+    const now = Date.now();
+    return Object.values(data.keys || {}).some(key =>
+        key && key.claimedBy === userId &&
+        (key.expiresAt === null || (Number.isFinite(key.expiresAt) && key.expiresAt > now))
+    );
+}
+
+function parseKeyDuration(input) {
+    const value = String(input || '').trim().toLowerCase();
+    if (value === 'nul' || value === 'null' || value === 'never') return { durationMs: null, label: 'Never expires' };
+    const match = value.match(/^(\d+)\s*(m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days|w|week|weeks|mo|month|months|y|yr|year|years)$/);
+    if (!match) return null;
+    const amount = Number(match[1]);
+    if (!Number.isSafeInteger(amount) || amount < 1) return null;
+    const unit = match[2];
+    const factor = ({ m: 60000, min: 60000, mins: 60000, minute: 60000, minutes: 60000,
+        h: 3600000, hr: 3600000, hrs: 3600000, hour: 3600000, hours: 3600000,
+        d: 86400000, day: 86400000, days: 86400000,
+        w: 604800000, week: 604800000, weeks: 604800000,
+        mo: 2592000000, month: 2592000000, months: 2592000000,
+        y: 31536000000, yr: 31536000000, year: 31536000000, years: 31536000000 })[unit];
+    const durationMs = amount * factor;
+    if (!Number.isSafeInteger(durationMs)) return null;
+    return { durationMs, label: `${amount}${unit}` };
+}
+
+function generateUniqueKey(data) {
+    let key;
+    do {
+        key = `HYPERION-${crypto.randomBytes(15).toString('base64url')}`;
+    } while (Object.prototype.hasOwnProperty.call(data.keys || {}, key));
+    return key;
 }
 
 // --- OWNER & ROLE CHECK ---
@@ -333,13 +424,15 @@ function makeObfuscationPanel(session) {
                 { label: 'Custom Watermark', value: 'custom', description: 'Type your own watermark.', default: session.settings.watermark === 'custom' }
             )
     );
-    const vmRow = new ActionRowBuilder().addComponents(
+    const engineRow = new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
-            .setCustomId(`obf_vm_${userId}`)
-            .setPlaceholder('Row 2 • Choose VM encryption')
+            .setCustomId(`obf_engine_${userId}`)
+            .setPlaceholder('Row 2 • Choose protection profile')
             .addOptions(
-                { label: 'Intense VM encryption ON', value: 'on', description: 'Encrypts the original source in heavy VM structure.', default: session.settings.intense === true },
-                { label: 'Intense VM encryption Off', value: 'off', description: 'The normal and recommended version.', default: session.settings.intense === false }
+                { label: 'Xhider', value: 'xhider', description: 'Select the Xhider profile.', default: session.settings.engine === 'xhider' },
+                { label: 'Aqua', value: 'aqua', description: 'Select the Aqua profile.', default: session.settings.engine === 'aqua' },
+                { label: 'Firefly', value: 'firefly', description: 'Select the Firefly profile.', default: session.settings.engine === 'firefly' },
+                { label: 'IceDragon', value: 'icedragon', description: 'Select the IceDragon anti-tamper profile.', default: session.settings.engine === 'icedragon' }
             )
     );
     const languageRow = new ActionRowBuilder().addComponents(
@@ -378,7 +471,7 @@ function makeObfuscationPanel(session) {
         new ButtonBuilder().setCustomId(`obf_cancel_${userId}`).setLabel('Cancel').setStyle(ButtonStyle.Secondary)
     );
     // Discord allows at most five action rows per message.
-    return [watermarkRow, vmRow, languageRow, analysisRow, finishRow];
+    return [watermarkRow, engineRow, languageRow, analysisRow, finishRow];
 }
 
 function makeObfuscationEmbed(session) {
@@ -396,9 +489,12 @@ function makeObfuscationEmbed(session) {
             '• **Hyperions Watermark On** — adds the Hyperion watermark.\n' +
             '• **Hyperions Watermark Off** — outputs without a watermark.\n' +
             '• **Custom Watermark** — enter your own watermark text.\n\n' +
-            '**Action Row 2 — Encryption**\n' +
-            '• **Intense VM encryption ON** — encrypts the original source in a heavy VM structure.\n' +
-            '• **Intense VM encryption Off** — the normal and recommended version.\n\n' +
+            '**Action Row 2 — Protection profile**\n' +
+            '• **Xhider** — select the Xhider profile.\n' +
+            '• **Aqua** — select the Aqua profile.\n' +
+            '• **Firefly** — select the Firefly profile.\n' +
+            '• **IceDragon** — select the IceDragon anti-tamper profile.\n' +
+            'Note: the dropdown is wired into the panel, but the vendor-specific Xhider/Aqua/Firefly transformations and string-dump features are not integrated into the output engine yet.\n\n' +
             '**Action Row 3 — Output language**\n' +
             '• **LuaU (Roblox)** — output for Roblox Luau.\n' +
             '• **Lua** — standard Lua output.\n\n' +
@@ -416,6 +512,7 @@ function makeObfuscationEmbed(session) {
         .addFields({
             name: 'Current settings',
             value: `• Watermark: ${watermarkLabel}\n` +
+                `• Protection profile: ${{ xhider: 'Xhider', aqua: 'Aqua', firefly: 'Firefly', icedragon: 'IceDragon' }[session.settings.engine || 'xhider']}\n` +
                 `• Intense VM encryption: ${session.settings.intense ? 'ON' : 'OFF (recommended)'}\n` +
                 `• Output language: ${session.settings.language === 'luau' ? 'LuaU (Roblox)' : 'Lua'}\n` +
                 `• Multi VM: ${session.settings.multiVm ? 'ON (two layers)' : 'OFF'}\n` +
@@ -484,7 +581,12 @@ const commands = [
     new SlashCommandBuilder().setName('blacklist').setDescription('Owner: blacklist a user').addUserOption(o => o.setName('user').setDescription('Target user').setRequired(true)),
     new SlashCommandBuilder().setName('unblacklist').setDescription('Owner: unblacklist a user').addUserOption(o => o.setName('user').setDescription('Target user').setRequired(true)),
     new SlashCommandBuilder().setName('ping').setDescription('Owner: check bot latency'),
-    new SlashCommandBuilder().setName('premium').setDescription('Owner: toggle premium role').addUserOption(o => o.setName('user').setDescription('Target user').setRequired(true))
+    new SlashCommandBuilder().setName('premium').setDescription('Owner: toggle premium role').addUserOption(o => o.setName('user').setDescription('Target user').setRequired(true)),
+    new SlashCommandBuilder().setName('genkey').setDescription('Owner: generate claimable Hyperion access keys')
+        .addStringOption(o => o.setName('duration').setDescription('Access duration: 7d, 12h, 30m, or nul for never').setRequired(true))
+        .addIntegerOption(o => o.setName('amount').setDescription('Number of keys to generate (1-1000)').setMinValue(1).setMaxValue(1000).setRequired(true)),
+    new SlashCommandBuilder().setName('claimkey').setDescription('Claim a Hyperion access key')
+        .addStringOption(o => o.setName('key').setDescription('Your HYPERION- key').setRequired(true))
 ].map(command => command.toJSON());
 
 client.once('ready', () => {
@@ -511,6 +613,71 @@ client.on('interactionCreate', async interaction => {
 
         if (data.blacklist && data.blacklist.includes(userId)) {
             await interaction.reply({ content: "❌ You are blacklisted from using this bot.", ephemeral: true });
+            return;
+        }
+
+        if (interaction.commandName === 'genkey') {
+            // Key generation is restricted to the configured primary bot owner.
+            if (userId !== PRIMARY_OWNER_ID) {
+                await interaction.reply({ content: '❌ Only the configured bot owner can generate keys.', ephemeral: true });
+                return;
+            }
+            const durationInput = interaction.options.getString('duration', true);
+            const amount = interaction.options.getInteger('amount', true);
+            const duration = parseKeyDuration(durationInput);
+            if (!duration) {
+                await interaction.reply({ content: '❌ Invalid duration. Use values such as `7d`, `12h`, `30m`, `2weeks`, or `nul` for never-expiring access.', ephemeral: true });
+                return;
+            }
+            const keyData = loadData();
+            if (!keyData.keys || typeof keyData.keys !== 'object') keyData.keys = {};
+            const generated = [];
+            const now = Date.now();
+            for (let i = 0; i < amount; i++) {
+                const key = generateUniqueKey(keyData);
+                keyData.keys[key] = {
+                    durationMs: duration.durationMs,
+                    durationLabel: duration.label,
+                    createdAt: now,
+                    claimedBy: null,
+                    claimedAt: null,
+                    expiresAt: null
+                };
+                generated.push(key);
+            }
+            saveData(keyData);
+            if (generated.length > 10) {
+                const file = new AttachmentBuilder(Buffer.from(generated.join('\n') + '\n', 'utf8'), { name: 'hyperion-keys.txt' });
+                const preview = generated.slice(0, 5).join('\n');
+                await interaction.reply({
+                    content: `✅ Generated **${generated.length}** unique keys. Duration after claiming: **${duration.label}**.\nFirst 5 lines of the file:\n\`\`\`text\n${preview}\n\`\`\``,
+                    files: [file], ephemeral: true
+                });
+            } else {
+                await interaction.reply({ content: `✅ Generated **${generated.length}** unique keys. Duration after claiming: **${duration.label}**.\n\`\`\`text\n${generated.join('\n')}\n\`\`\``, ephemeral: true });
+            }
+            return;
+        }
+
+        if (interaction.commandName === 'claimkey') {
+            const suppliedKey = interaction.options.getString('key', true).trim();
+            const keyData = loadData();
+            if (!keyData.keys || !Object.prototype.hasOwnProperty.call(keyData.keys, suppliedKey)) {
+                await interaction.reply({ content: '❌ That key does not exist. Check the key and try again.', ephemeral: true });
+                return;
+            }
+            const record = keyData.keys[suppliedKey];
+            if (record.claimedBy) {
+                await interaction.reply({ content: record.claimedBy === userId ? 'ℹ️ You have already claimed this key.' : '❌ That key has already been claimed by another user.', ephemeral: true });
+                return;
+            }
+            const now = Date.now();
+            record.claimedBy = userId;
+            record.claimedAt = now;
+            record.expiresAt = record.durationMs === null ? null : now + record.durationMs;
+            saveData(keyData);
+            const expiryText = record.expiresAt === null ? 'Never expires' : `<t:${Math.floor(record.expiresAt / 1000)}:F>`;
+            await interaction.reply({ content: `✅ Key claimed successfully! Your access is active until: **${expiryText}**. You can now use paid bot features without spending credits while this key is active.`, ephemeral: true });
             return;
         }
 
@@ -675,8 +842,9 @@ client.on('interactionCreate', async interaction => {
         }
         else if (interaction.commandName === 'obfuscate' || interaction.commandName === 'minify') {
             const userData = getUser(userId);
-            if (userData.users[userId].credits < 2) {
-                await interaction.reply({ content: "❌ **Access Denied:** You need at least **2 credits** to use this command. Use `/daily` to get credits!", ephemeral: true });
+            const keyAccess = hasActiveKeyAccess(userId, userData);
+            if (!keyAccess && userData.users[userId].credits < 2) {
+                await interaction.reply({ content: "❌ **Access Denied:** You need at least **2 credits** or an active claimed key. Use `/daily` to get credits or `/claimkey` to claim a key.", ephemeral: true });
                 return;
             }
 
@@ -756,7 +924,7 @@ client.on('interactionCreate', async interaction => {
                 const session = {
                     userId,
                     code: luaCode,
-                    settings: { watermark: 'hyperion', watermarkText: '', intense: false, language: 'luau', multiVm: false, preset: 'standard', analysis: 'hard' }
+                    settings: { watermark: 'hyperion', watermarkText: '', intense: false, language: 'luau', multiVm: false, preset: 'standard', analysis: 'hard', engine: 'xhider' }
                 };
                 pendingObfuscations.set(userId, session);
                 const initialReport = analyzeLuaSource(luaCode);
@@ -774,7 +942,7 @@ client.on('interactionCreate', async interaction => {
                 return;
             }
 
-            userData.users[userId].credits -= 2;
+            if (!keyAccess) userData.users[userId].credits -= 2;
             saveData(userData);
             const output = minifyLua(luaCode);
             const attachment = new AttachmentBuilder(Buffer.from(output, 'utf-8'), { name: 'minified.lua' });
@@ -853,6 +1021,8 @@ client.on('interactionCreate', async interaction => {
             }
             session.settings.watermark = selected;
             session.settings.watermarkText = '';
+        } else if (interaction.customId.startsWith('obf_engine_')) {
+            session.settings.engine = selected;
         } else if (interaction.customId.startsWith('obf_vm_')) {
             session.settings.intense = selected === 'on';
         } else if (interaction.customId.startsWith('obf_language_')) {
@@ -975,12 +1145,13 @@ client.on('interactionCreate', async interaction => {
                 return;
             }
             const userData = getUser(ownerId);
-            if (userData.users[ownerId].credits < 2) {
+            const keyAccess = hasActiveKeyAccess(ownerId, userData);
+            if (!keyAccess && userData.users[ownerId].credits < 2) {
                 pendingObfuscations.delete(ownerId);
-                await interaction.update({ content: '❌ You no longer have enough credits. You need 2 credits to obfuscate.', embeds: [], components: [] });
+                await interaction.update({ content: '❌ You no longer have enough credits. You need 2 credits or an active claimed key to obfuscate.', embeds: [], components: [] });
                 return;
             }
-            userData.users[ownerId].credits -= 2;
+            if (!keyAccess) userData.users[ownerId].credits -= 2;
             saveData(userData);
             let output;
             const minifiedSource = session.settings.preset === 'compact' ? minifyLua(session.code) : session.code;
@@ -998,7 +1169,7 @@ client.on('interactionCreate', async interaction => {
             // separators to semicolons so the final file is one physical line. Convert a leading
             // line-comment watermark to a block comment first so it cannot comment out the script.
             if (session.settings.intense || session.settings.multiVm) {
-                output = output.replace(/^--([^\r\n]*)\r?\n/, '--$1');
+                output = output.replace(/^--([^\r\n]*)\r?\n/, '--$1\n');
                 output = output.split(/\r?\n/).map(line => line.trim()).filter(Boolean).join(';');
                 output = output.replace(/;{2,}/g, ';').replace(/^;+|;+$/g, '');
             } else {
@@ -1155,8 +1326,9 @@ client.on('messageCreate', async message => {
             } else if (message.attachments.size) {
                 try { const res = await fetch(message.attachments.first().url); if (!res.ok) throw new Error('HTTP'); luaCode = await res.text(); } catch (_) { await message.reply('❌ Failed to read attached file.'); return; }
             }
-            const ud = getUser(uid); if (ud.users[uid].credits < 2) { await message.reply('❌ You need 2 credits.'); return; }
-            ud.users[uid].credits -= 2; saveData(ud);
+            const ud = getUser(uid); const keyAccess = hasActiveKeyAccess(uid, ud);
+            if (!keyAccess && ud.users[uid].credits < 2) { await message.reply('❌ You need 2 credits or an active claimed key. Use `/claimkey` if you have a key.'); return; }
+            if (!keyAccess) ud.users[uid].credits -= 2; saveData(ud);
             const output = command === 'minify' ? minifyLua(luaCode) : buildPortableEncryptedScript(minifyLua(luaCode));
             const attachment = new AttachmentBuilder(Buffer.from(output, 'utf8'), { name: command === 'minify' ? 'minified.lua' : 'obfuscated.luau' });
             const preview = output.split(/\r?\n/).slice(0,10).join('\n').slice(0,900) || '(empty output)';
@@ -1261,5 +1433,8 @@ client.on('messageCreate', async message => {
         }
     }
 });
+
+validateStartupConfig();
+verifySourceIntegrity();
 
 client.login(TOKEN);
