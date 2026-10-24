@@ -230,6 +230,57 @@ function obfuscateLua(code) {
     return buildProtectedScript(code);
 }
 
+// Static, non-executing Lua/Luau analysis. This is a lightweight heuristic, not a full parser.
+function analyzeLuaSource(code) {
+    const findings = [];
+    const lines = String(code || '').split(/\r?\n/);
+    if (!String(code || '').trim()) findings.push('ERROR: Source is empty.');
+    if (Buffer.byteLength(String(code || ''), 'utf8') > 500000) findings.push('WARNING: Source is large (>500 KB); processing may be slow.');
+
+    // Strip comments and quoted strings before checking delimiter balance.
+    let clean = '';
+    let quote = null, quoteStart = -1, longComment = false, lineComment = false, escaped = false;
+    for (let i = 0; i < String(code || '').length; i++) {
+        const ch = code[i], next = code[i + 1];
+        if (lineComment) { if (ch === '\n') { lineComment = false; clean += '\n'; } else clean += ' '; continue; }
+        if (longComment) { if (ch === ']' && next === ']') { longComment = false; clean += '  '; i++; } else clean += ch === '\n' ? '\n' : ' '; continue; }
+        if (quote) {
+            if (escaped) escaped = false;
+            else if (ch === '\\') escaped = true;
+            else if (ch === quote) quote = null;
+            clean += ch === '\n' ? '\n' : ' ';
+            continue;
+        }
+        if (ch === '-' && next === '-') {
+            if (code[i + 2] === '[' && code[i + 3] === '[') { longComment = true; clean += '    '; i += 3; }
+            else { lineComment = true; clean += '  '; i++; }
+            continue;
+        }
+        if (ch === '\'' || ch === '"') { quote = ch; quoteStart = i; clean += ' '; continue; }
+        clean += ch;
+    }
+    const stack = [];
+    const pairs = { ')': '(', ']': '[', '}': '{' };
+    for (let i = 0; i < clean.length; i++) {
+        const ch = clean[i];
+        if (ch === '(' || ch === '[' || ch === '{') stack.push({ ch, index: i });
+        else if (pairs[ch]) {
+            const last = stack.pop();
+            if (!last || last.ch !== pairs[ch]) {
+                findings.push(`ERROR: Unmatched delimiter '${ch}' on line ${clean.slice(0, i).split('\n').length}.`);
+                break;
+            }
+        }
+    }
+    if (stack.length) findings.push(`ERROR: Unclosed '${stack[stack.length - 1].ch}' delimiter opened on line ${clean.slice(0, stack[stack.length - 1].index).split('\n').length}.`);
+    if (quote) findings.push(`ERROR: Unclosed ${quote === '\'' ? 'single' : 'double'}-quoted string opened on line ${clean.slice(0, quoteStart).split('\n').length}.`);
+    if (/\b(loadstring|load)\s*\(/.test(String(code || ''))) findings.push('WARNING: Dynamic code loading detected (load/loadstring); only run code you trust.');
+    if (/\b(HttpGet|request|http_request|syn\.request)\b/.test(String(code || ''))) findings.push('NOTICE: Network-request API reference detected; review any remote data or code sources.');
+    if (/\b(getgenv|identifyexecutor|hookfunction|hookmetamethod)\b/.test(String(code || ''))) findings.push('NOTICE: Executor-specific API reference detected; this may not run in standard Lua.');
+    if (!findings.length) findings.push('No obvious delimiter issues or common risk markers found. This is not a guarantee of correctness or safety.');
+    return { lines: lines.length, bytes: Buffer.byteLength(String(code || ''), 'utf8'), findings };
+}
+
 // Pending obfuscation sessions are kept in memory until the user confirms their settings.
 const pendingObfuscations = new Map();
 const HYPERION_WATERMARK = '--Obfuscated by HyperionV1 [https://discord.gg/9wJs5bwxRz]';
@@ -309,11 +360,25 @@ function makeObfuscationPanel(session) {
                 { label: 'Multi VM Off', value: 'off', description: 'Use one protection layer or the standard mode.', default: session.settings.multiVm === false }
             )
     );
+    const analysisRow = new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+            .setCustomId(`obf_analysis_${userId}`)
+            .setPlaceholder('Row 5 • Choose code analysis')
+            .addOptions(
+                { label: 'Hard Analysis', value: 'hard', description: 'Full static checks and line-numbered findings.', default: session.settings.analysis === 'hard' },
+                { label: 'Medium Analysis', value: 'medium', description: 'Check strings and bracket/brace/parenthesis balance.', default: session.settings.analysis === 'medium' },
+                { label: 'No Analysis', value: 'none', description: 'Skip automatic analysis.', default: session.settings.analysis === 'none' }
+            )
+    );
     const finishRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`obf_preset_toggle_${userId}`).setLabel(session.settings.preset === 'compact' ? 'Preset: Compact' : 'Preset: Standard').setStyle(session.settings.preset === 'compact' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(`obf_multivm_toggle_${userId}`).setLabel(session.settings.multiVm ? 'Multi VM: ON' : 'Multi VM: OFF').setStyle(session.settings.multiVm ? ButtonStyle.Primary : ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId(`obf_analyze_${userId}`).setLabel('Analyze Now').setStyle(ButtonStyle.Secondary),
         new ButtonBuilder().setCustomId(`obf_finish_${userId}`).setLabel('Obfuscate Now').setStyle(ButtonStyle.Success),
         new ButtonBuilder().setCustomId(`obf_cancel_${userId}`).setLabel('Cancel').setStyle(ButtonStyle.Secondary)
     );
-    return [watermarkRow, vmRow, languageRow, multiVmRow, finishRow];
+    // Discord allows at most five action rows per message.
+    return [watermarkRow, vmRow, languageRow, analysisRow, finishRow];
 }
 
 function makeObfuscationEmbed(session) {
@@ -337,18 +402,27 @@ function makeObfuscationEmbed(session) {
             '**Action Row 3 — Output language**\n' +
             '• **LuaU (Roblox)** — output for Roblox Luau.\n' +
             '• **Lua** — standard Lua output.\n\n' +
-            '**Action Row 4 — Multi VM**\n' +
-            '• **Multi VM On** — wraps the script in two VM protection layers.\n' +
-            '• **Multi VM Off** — uses the selected single-layer or standard mode.'
+            '**Processing controls**\n' +
+            '• **Multi VM** — toggle two nested processing layers with the button below.\n' +
+            '• **Preset** — toggle Standard or Compact processing with the button below.\n\n' +
+            '• **Standard** — use the supplied source as-is before processing.\n' +
+            '• **Compact** — remove comments and blank lines before processing.\n\n' +
+            '**Action Row 4 — Code Analysis**\n' +
+            '• **Hard Analysis** — full static checks and line-numbered findings.\n' +
+            '• **Medium Analysis** — checks quotes and delimiter balance.\n' +
+            '• **No Analysis** — skips automatic checks.\n' +
+            'Detected syntax-like errors are reported with line numbers before output generation.'
         )
         .addFields({
             name: 'Current settings',
             value: `• Watermark: ${watermarkLabel}\n` +
                 `• Intense VM encryption: ${session.settings.intense ? 'ON' : 'OFF (recommended)'}\n` +
                 `• Output language: ${session.settings.language === 'luau' ? 'LuaU (Roblox)' : 'Lua'}\n` +
-                `• Multi VM: ${session.settings.multiVm ? 'ON (two layers)' : 'OFF'}`
+                `• Multi VM: ${session.settings.multiVm ? 'ON (two layers)' : 'OFF'}\n` +
+                `• Processing preset: ${session.settings.preset === 'compact' ? 'Compact' : 'Standard'}\n` +
+                `• Code analysis: ${{ hard: 'Hard', medium: 'Medium', none: 'Off' }[session.settings.analysis || 'hard']}`
         })
-        .setFooter({ text: 'Use the dropdown menus below the embed to change options.' })
+        .setFooter({ text: 'Use the dropdown menus and buttons below to change options, analyze source, or generate output.' })
         .setColor(0xFFFFFF);
 }
 
@@ -682,12 +756,17 @@ client.on('interactionCreate', async interaction => {
                 const session = {
                     userId,
                     code: luaCode,
-                    settings: { watermark: 'hyperion', watermarkText: '', intense: false, language: 'luau', multiVm: false }
+                    settings: { watermark: 'hyperion', watermarkText: '', intense: false, language: 'luau', multiVm: false, preset: 'standard', analysis: 'hard' }
                 };
                 pendingObfuscations.set(userId, session);
+                const initialReport = analyzeLuaSource(luaCode);
+                session.initialAnalysisErrors = initialReport.findings.filter(item => item.startsWith('ERROR:'));
                 // Public panel: editing an ephemeral interaction can only produce an ephemeral result.
                 // Keep the panel and final output in one public message visible to the channel.
                 await interaction.reply({
+                    content: session.initialAnalysisErrors.length
+                        ? `⚠️ **Possible code errors detected before processing:**\n${session.initialAnalysisErrors.slice(0, 8).join('\n')}\n\nPlease review the line numbers. Static checks are heuristic and may not catch every Lua/Luau syntax error.`
+                        : null,
                     embeds: [makeObfuscationEmbed(session)],
                     components: makeObfuscationPanel(session),
                     ephemeral: false
@@ -780,8 +859,19 @@ client.on('interactionCreate', async interaction => {
             session.settings.language = selected;
         } else if (interaction.customId.startsWith('obf_multivm_')) {
             session.settings.multiVm = selected === 'on';
+        } else if (interaction.customId.startsWith('obf_analysis_')) {
+            session.settings.analysis = selected;
         }
         await interaction.update({ embeds: [makeObfuscationEmbed(session)], components: makeObfuscationPanel(session) });
+        if (interaction.customId.startsWith('obf_analysis_') && selected !== 'none') {
+            const report = analyzeLuaSource(session.code);
+            const errors = report.findings.filter(item => item.startsWith('ERROR:'));
+            if (errors.length) {
+                await interaction.followUp({ content: `⚠️ **Possible code errors detected:**\n${errors.slice(0, 8).join('\n')}\n\nStatic analysis is heuristic; verify the reported lines in your editor.`, ephemeral: true });
+            } else {
+                await interaction.followUp({ content: `✅ ${selected === 'hard' ? 'Hard' : 'Medium'} analysis found no obvious syntax-like errors. This is not a guarantee that the code compiles.`, ephemeral: true });
+            }
+        }
     }
     else if (interaction.isModalSubmit()) {
         if (!interaction.customId.startsWith('obf_modal_')) return;
@@ -800,6 +890,57 @@ client.on('interactionCreate', async interaction => {
         await interaction.update({ embeds: [makeObfuscationEmbed(session)], components: makeObfuscationPanel(session) });
     }
     else if (interaction.isButton()) {
+        if (interaction.customId.startsWith('obf_analyze_')) {
+            const ownerId = interaction.customId.slice('obf_analyze_'.length);
+            if (interaction.user.id !== ownerId) {
+                await interaction.reply({ content: 'This analysis panel belongs to another user.', ephemeral: true });
+                return;
+            }
+            const session = pendingObfuscations.get(ownerId);
+            if (!session) {
+                await interaction.reply({ content: 'This obfuscation panel has expired. Run `/obfuscate` again.', ephemeral: true });
+                return;
+            }
+            const fullReport = analyzeLuaSource(session.code);
+            const report = { ...fullReport };
+            if ((session.settings.analysis || 'hard') === 'none') {
+                report.findings = ['Analysis is disabled for this session. No source checks were run.'];
+            } else if (session.settings.analysis === 'medium') {
+                report.findings = fullReport.findings.filter(item => item.startsWith('ERROR:') || item.includes('delimiter') || item.includes('quoted string'));
+                if (!report.findings.length) report.findings = ['No obvious quote or delimiter errors found. Medium analysis is heuristic and is not a complete Lua/Luau parser.'];
+            }
+            const description = report.findings.map((item, i) => `${i + 1}. ${item}`).join('\n').slice(0, 3500);
+            const embed = new EmbedBuilder()
+                .setTitle('Lua/Luau Static Analysis')
+                .setDescription(description)
+                .addFields(
+                    { name: 'Lines', value: String(report.lines), inline: true },
+                    { name: 'Size', value: `${report.bytes} bytes`, inline: true },
+                    { name: 'Mode', value: ({ hard: 'Hard', medium: 'Medium', none: 'Disabled' })[session.settings.analysis || 'hard'], inline: true },
+                    { name: 'Scope', value: 'Static heuristics only — source was not executed. This is not a full Lua/Luau parser.', inline: false }
+                )
+                .setColor(report.findings.some(x => x.startsWith('ERROR:')) ? 0xE74C3C : 0x3498DB);
+            await interaction.reply({ embeds: [embed], ephemeral: true });
+            return;
+        }
+        if (interaction.customId.startsWith('obf_preset_toggle_') || interaction.customId.startsWith('obf_multivm_toggle_')) {
+            const isPresetToggle = interaction.customId.startsWith('obf_preset_toggle_');
+            const prefix = isPresetToggle ? 'obf_preset_toggle_' : 'obf_multivm_toggle_';
+            const ownerId = interaction.customId.slice(prefix.length);
+            if (interaction.user.id !== ownerId) {
+                await interaction.reply({ content: 'This obfuscation panel belongs to another user.', ephemeral: true });
+                return;
+            }
+            const session = pendingObfuscations.get(ownerId);
+            if (!session) {
+                await interaction.reply({ content: 'This obfuscation panel has expired. Run `/obfuscate` again.', ephemeral: true });
+                return;
+            }
+            if (isPresetToggle) session.settings.preset = session.settings.preset === 'compact' ? 'standard' : 'compact';
+            else session.settings.multiVm = !session.settings.multiVm;
+            await interaction.update({ embeds: [makeObfuscationEmbed(session)], components: makeObfuscationPanel(session) });
+            return;
+        }
         if (interaction.customId.startsWith('obf_cancel_')) {
             const ownerId = interaction.customId.slice('obf_cancel_'.length);
             if (interaction.user.id !== ownerId) {
@@ -821,6 +962,14 @@ client.on('interactionCreate', async interaction => {
                 await interaction.reply({ content: 'This panel has expired. Run `/obfuscate` again.', ephemeral: true });
                 return;
             }
+            if ((session.settings.analysis || 'hard') !== 'none') {
+                const report = analyzeLuaSource(session.code);
+                const errors = report.findings.filter(item => item.startsWith('ERROR:'));
+                if (errors.length) {
+                    await interaction.reply({ content: `❌ **Output paused: possible code errors detected.**\n${errors.slice(0, 8).join('\n')}\n\nFix these lines and run `/obfuscate` again. Analysis is heuristic, so also check the code in a Lua/Luau editor.`, ephemeral: true });
+                    return;
+                }
+            }
             if (session.settings.intense && session.settings.language === 'lua') {
                 await interaction.reply({ content: 'Intense VM encryption currently requires **LuaU (Roblox)**. Select LuaU or turn Intense VM encryption off.', ephemeral: true });
                 return;
@@ -834,7 +983,7 @@ client.on('interactionCreate', async interaction => {
             userData.users[ownerId].credits -= 2;
             saveData(userData);
             let output;
-            const minifiedSource = minifyLua(session.code);
+            const minifiedSource = session.settings.preset === 'compact' ? minifyLua(session.code) : session.code;
             if (session.settings.multiVm) {
                 // Multi VM mode uses two nested protected-loader layers.
                 output = buildProtectedScript(minifiedSource).replace(/^--[^\r\n]*HyperionV1[^\r\n]*\r?\n/, '');
@@ -849,7 +998,7 @@ client.on('interactionCreate', async interaction => {
             // separators to semicolons so the final file is one physical line. Convert a leading
             // line-comment watermark to a block comment first so it cannot comment out the script.
             if (session.settings.intense || session.settings.multiVm) {
-                output = output.replace(/^--([^\r\n]*)\r?\n/, '--$1');
+                output = output.replace(/^--([^\r\n]*)\r?\n/, '--[[$1]];');
                 output = output.split(/\r?\n/).map(line => line.trim()).filter(Boolean).join(';');
                 output = output.replace(/;{2,}/g, ';').replace(/^;+|;+$/g, '');
             } else {
