@@ -1,15 +1,16 @@
 {
-  "name": "hyperion-lua-bot",
+  "name": "hyperion-discord-bot",
   "version": "1.0.0",
-  "description": "Discord Lua obfuscator bot",
+  "private": true,
+  "description": "Hyperion Discord bot",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
-  "dependencies": {
-    "discord.js": "^14.14.1"
-  },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "discord.js": "^14.19.3"
   }
 }

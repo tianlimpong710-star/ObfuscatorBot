@@ -75,7 +75,7 @@ process.on('uncaughtException', error => {
 // --- CONFIGURATION ---
 const TOKEN = process.env.DISCORD_TOKEN || "YOUR_BOT_TOKEN_HERE";
 const CLIENT_ID = process.env.CLIENT_ID || "YOUR_CLIENT_ID_HERE";
-const PRIMARY_OWNER_ID = "123456789012345678"; // Replace with your main Discord User ID
+const PRIMARY_OWNER_ID = process.env.PRIMARY_OWNER_ID || "1278949612358602816"; // Discord user ID for the primary bot owner
 
 const ALLOWED_ROLE_IDS = [
     "1552940976236929024",
@@ -1169,7 +1169,7 @@ client.on('interactionCreate', async interaction => {
             // separators to semicolons so the final file is one physical line. Convert a leading
             // line-comment watermark to a block comment first so it cannot comment out the script.
             if (session.settings.intense || session.settings.multiVm) {
-                output = output.replace(/^--([^\r\n]*)\r?\n/, '--$1\n');
+                output = output.replace(/^--([^\r\n]*)\r?\n/, '--$1');
                 output = output.split(/\r?\n/).map(line => line.trim()).filter(Boolean).join(';');
                 output = output.replace(/;{2,}/g, ';').replace(/^;+|;+$/g, '');
             } else {
