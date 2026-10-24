@@ -998,7 +998,7 @@ client.on('interactionCreate', async interaction => {
             // separators to semicolons so the final file is one physical line. Convert a leading
             // line-comment watermark to a block comment first so it cannot comment out the script.
             if (session.settings.intense || session.settings.multiVm) {
-                output = output.replace(/^--([^\r\n]*)\r?\n/, '--[[$1]];');
+                output = output.replace(/^--([^\r\n]*)\r?\n/, '--$1');
                 output = output.split(/\r?\n/).map(line => line.trim()).filter(Boolean).join(';');
                 output = output.replace(/;{2,}/g, ';').replace(/^;+|;+$/g, '');
             } else {
