@@ -543,6 +543,66 @@ function applyWatermark(output, settings) {
     return watermark ? `${watermark}\n${output}` : output;
 }
 
+// --- SAFE STATIC LUA ENVIRONMENT ANALYZER ---
+// This scans source text only. It never executes user-supplied Lua/Luau code.
+function analyzeLuaEnvironment(source) {
+    const rules = [
+        ['Roblox services', /\bgame\s*:\s*GetService\s*\(\s*(["'])(.*?)\1\s*\)/g],
+        ['Remote/API references', /\b(?:RemoteEvent|RemoteFunction|BindableEvent|BindableFunction)\b|\b(?:FireServer|InvokeServer|FireClient|FireAllClients|OnServerEvent|OnClientEvent|InvokeClient)\b/g],
+        ['Environment/introspection APIs', /\b(?:getfenv|setfenv|getgenv|getrenv|getreg|debug\s*\.\s*(?:getinfo|getupvalue|getregistry|traceback))\b/g],
+        ['Dynamic code loading', /\b(?:loadstring|load)\s*\(/g],
+        ['File/system APIs', /\b(?:readfile|writefile|appendfile|delfile|isfile|isfolder|makefolder|listfiles|io\s*\.|os\s*\.)/g],
+        ['Hook/metatable APIs', /\b(?:hookfunction|hookmetamethod|newcclosure|checkcaller|getnamecallmethod|setreadonly|isreadonly|rawmetatable|getrawmetatable|setmetatable)\b/g],
+        ['HTTP/network APIs', /\b(?:HttpGet|HttpPost|RequestAsync|http_request|request|syn\s*\.\s*request|game\s*:\s*HttpGet)\b/g],
+        ['Potentially sensitive globals', /\b(?:_G|shared|Environment|Workspace|Players|ReplicatedStorage|ServerStorage|CoreGui|RunService|UserInputService)\b/g]
+    ];
+    const unique = (items) => [...new Set(items)].sort((a, b) => a.localeCompare(b));
+    const matches = {};
+    for (const [label, regex] of rules) {
+        const found = [];
+        regex.lastIndex = 0;
+        let match;
+        while ((match = regex.exec(source)) !== null) {
+            // For service lookups, report the literal service name rather than the full call.
+            found.push(label === 'Roblox services' ? match[2] : match[0].trim());
+            if (match[0].length === 0) regex.lastIndex++;
+        }
+        matches[label] = unique(found).slice(0, 100);
+    }
+
+    const lines = source.split(/\r?\n/);
+    const urlMatches = unique((source.match(/https?:\/\/[^\s"'<>]+/gi) || []).map(v => v.slice(0, 250))).slice(0, 100);
+    const globals = unique((source.match(/\b[A-Za-z_][A-Za-z0-9_]*\s*\.\s*[A-Za-z_][A-Za-z0-9_]*/g) || []).map(v => v.replace(/\s+/g, ''))).slice(0, 100);
+    const report = [
+        'PENGUIN / HYPERION — STATIC LUA ENVIRONMENT REPORT',
+        '==================================================',
+        `Source size: ${Buffer.byteLength(source, 'utf8')} bytes`,
+        `Line count: ${lines.length}`,
+        'Execution: NOT RUN (static text scan only)',
+        '',
+        'ROBLOX SERVICE LOOKUPS',
+        ...(matches['Roblox services'].length ? matches['Roblox services'].map(x => `- ${x}`) : ['- None detected']),
+        '',
+        ...Object.entries(matches).filter(([label]) => label !== 'Roblox services').flatMap(([label, values]) => [
+            label.toUpperCase(),
+            ...(values.length ? values.map(x => `- ${x}`) : ['- None detected']),
+            ''
+        ]),
+        'URLS FOUND',
+        ...(urlMatches.length ? urlMatches.map(x => `- ${x}`) : ['- None detected']),
+        '',
+        'COMMON OBJECT/MEMBER REFERENCES (sample)',
+        ...(globals.length ? globals.map(x => `- ${x}`) : ['- None detected']),
+        '',
+        'NOTES',
+        '- This is heuristic static analysis, not a runtime environment dump.',
+        '- A match is not proof of malicious behavior; inspect context before drawing conclusions.',
+        '- This tool does not execute, load, or contact URLs found in the source.'
+    ].join('\n');
+    const counts = Object.fromEntries(Object.entries(matches).map(([label, values]) => [label, values.length]));
+    return { report, counts, urlCount: urlMatches.length, lineCount: lines.length };
+}
+
 // --- CLIENT SETUP ---
 const client = new Client({
     intents: [
@@ -576,6 +636,11 @@ const commands = [
         .addStringOption(option => option.setName('code').setDescription('Pasted Lua code').setRequired(false))
         .addAttachmentOption(option => option.setName('file').setDescription('Lua file attachment').setRequired(false))
         .addStringOption(option => option.setName('url').setDescription('Raw URL containing downloadable Lua text').setRequired(false)),
+    new SlashCommandBuilder()
+        .setName('envlog')
+        .setDescription('Statically inspect Lua/Luau source for environment/API references (does not execute it)')
+        .addStringOption(option => option.setName('code').setDescription('Paste Lua/Luau source (up to 4000 characters)').setMaxLength(4000).setRequired(false))
+        .addAttachmentOption(option => option.setName('file').setDescription('Lua/Luau source file to scan').setRequired(false)),
     new SlashCommandBuilder().setName('credit').setDescription('Owner: add credits').addIntegerOption(o => o.setName('amount').setDescription('Amount').setRequired(true)).addUserOption(o => o.setName('user').setDescription('Target user').setRequired(true)),
     new SlashCommandBuilder().setName('delcre').setDescription('Owner: remove credits').addIntegerOption(o => o.setName('amount').setDescription('Amount').setRequired(true)).addUserOption(o => o.setName('user').setDescription('Target user').setRequired(true)),
     new SlashCommandBuilder().setName('blacklist').setDescription('Owner: blacklist a user').addUserOption(o => o.setName('user').setDescription('Target user').setRequired(true)),
@@ -734,7 +799,8 @@ client.on('interactionCreate', async interaction => {
                                 "/leaderboard - View the credits leaderboard\n" +
                                 "/transfer <amount> <@user> - Transfer credits\n" +
                                 "/obfuscate <code> or <file> or <url> - Obfuscate Lua\n" +
-                                "/minify <code> or <file> or <url> - Minify Lua\n\n" +
+                                "/minify <code> or <file> or <url> - Minify Lua\n" +
+                                "/envlog <code> or <file> - Static Lua environment scan\n\n" +
                                 "**Prefix's**\n" +
                                 ".help\n" +
                                 ".daily\n" +
@@ -742,7 +808,8 @@ client.on('interactionCreate', async interaction => {
                                 ".leaderboard\n" +
                                 ".transfer <amount> <@user>\n" +
                                 ".obfuscate <code> or <file> or <url>\n" +
-                                ".minify <code> or <file> or <url>")
+                                ".minify <code> or <file> or <url>\n" +
+                                ".envlog <code> or attached file - Static Lua environment scan")
                 .setColor(0xFFFFFF);
 
             const row = new ActionRowBuilder().addComponents(
@@ -839,6 +906,51 @@ client.on('interactionCreate', async interaction => {
                 .setColor(0xFFFFFF);
 
             await interaction.reply({ embeds: [embed] });
+        }
+        else if (interaction.commandName === 'envlog') {
+            const codeOpt = interaction.options.getString('code');
+            const fileOpt = interaction.options.getAttachment('file');
+            if (!codeOpt && !fileOpt) {
+                await interaction.reply({ content: 'Attach a `.lua`/`.luau` file or paste source in the `code` option. This command scans text only and never executes it.', ephemeral: true });
+                return;
+            }
+            let source = codeOpt || '';
+            if (fileOpt) {
+                if (fileOpt.size > 1000000) {
+                    await interaction.reply({ content: '❌ File too large. Maximum supported size is 1 MB.', ephemeral: true });
+                    return;
+                }
+                try {
+                    const response = await fetch(fileOpt.url, { signal: AbortSignal.timeout(12000) });
+                    if (!response.ok) throw new Error('Download failed');
+                    source = await response.text();
+                } catch (_) {
+                    await interaction.reply({ content: '❌ Could not read that attachment. Try uploading it again.', ephemeral: true });
+                    return;
+                }
+            }
+            if (!source.trim()) {
+                await interaction.reply({ content: '❌ The source file is empty.', ephemeral: true });
+                return;
+            }
+            if (Buffer.byteLength(source, 'utf8') > 1000000) {
+                await interaction.reply({ content: '❌ Source too large. Maximum supported size is 1 MB.', ephemeral: true });
+                return;
+            }
+            const result = analyzeLuaEnvironment(source);
+            const totalFindings = Object.values(result.counts).reduce((sum, count) => sum + count, 0) + result.urlCount;
+            const reportFile = new AttachmentBuilder(Buffer.from(result.report, 'utf8'), { name: 'hyperion_envlog_report.txt' });
+            const embed = new EmbedBuilder()
+                .setTitle('🔎 Static Environment Scan')
+                .setColor(0xFFFFFF)
+                .setDescription('Scan complete. Source was **not executed**; results are heuristic references found in the text.')
+                .addFields(
+                    { name: 'Lines', value: String(result.lineCount), inline: true },
+                    { name: 'Findings', value: String(totalFindings), inline: true },
+                    { name: 'URLs', value: String(result.urlCount), inline: true }
+                )
+                .setFooter({ text: 'Review the attached report; matches are not proof of malicious behavior.' });
+            await interaction.reply({ embeds: [embed], files: [reportFile], ephemeral: true });
         }
         else if (interaction.commandName === 'obfuscate' || interaction.commandName === 'minify') {
             const userData = getUser(userId);
@@ -1165,16 +1277,20 @@ client.on('interactionCreate', async interaction => {
                 output = buildPortableEncryptedScript(minifiedSource);
             }
             output = applyWatermark(output, session.settings);
-            // Intense VM mode can emit a multi-line template. Collapse its generated statement
-            // separators to semicolons so the final file is one physical line. Convert a leading
-            // line-comment watermark to a block comment first so it cannot comment out the script.
+            // Keep the watermark on its own first line. If we flatten the whole output,
+            // a Lua line-comment watermark (--) would comment out the obfuscated code.
+            const watermarkMatch = output.match(/^(--[^\r\n]*)\r?\n/);
+            const watermarkLine = watermarkMatch ? watermarkMatch[1] : '';
+            if (watermarkMatch) output = output.slice(watermarkMatch[0].length);
+
+            // Flatten only the generated code body when VM modes produce multiple lines.
             if (session.settings.intense || session.settings.multiVm) {
-                output = output.replace(/^--([^\r\n]*)\r?\n/, '--$1');
                 output = output.split(/\r?\n/).map(line => line.trim()).filter(Boolean).join(';');
                 output = output.replace(/;{2,}/g, ';').replace(/^;+|;+$/g, '');
             } else {
                 output = output.split(/\r?\n/).map(line => line.trim()).filter(Boolean).join('\n');
             }
+            output = watermarkLine ? `${watermarkLine}\n${output}` : output;
             const attachment = new AttachmentBuilder(Buffer.from(output, 'utf-8'), { name: session.settings.language === 'luau' ? 'obfuscated.luau' : 'obfuscated.lua' });
             pendingObfuscations.delete(ownerId);
             const outputPreview = output.split(/\r?\n/).slice(0, 10).join('\n').slice(0, 900) || '(empty output)';
@@ -1225,7 +1341,8 @@ client.on('interactionCreate', async interaction => {
                                  "/leaderboard - View the credits leaderboard\n" +
                                  "/transfer <amount> <@user> - Transfer credits\n" +
                                  "/obfuscate <code> or <file> or <url> - Obfuscate Lua\n" +
-                                 "/minify <code> or <file> or <url> - Minify Lua\n\n" +
+                                 "/minify <code> or <file> or <url> - Minify Lua\n" +
+                                "/envlog <code> or <file> - Static Lua environment scan\n\n" +
                                  "**Prefix Commands**\n" +
                                  ".help - Show this help menu\n" +
                                  ".daily - Claim daily credits\n" +
@@ -1233,7 +1350,8 @@ client.on('interactionCreate', async interaction => {
                                  ".leaderboard - View the credits leaderboard\n" +
                                  ".transfer <amount> <@user> - Transfer credits\n" +
                                  ".obfuscate <code> or <file> or <url> - Obfuscate Lua\n" +
-                                 ".minify <code> or <file> or <url> - Minify Lua")
+                                 ".minify <code> or <file> or <url> - Minify Lua\n" +
+                                ".envlog <code> or attached file - Static Lua environment scan")
                  .setColor(0xFFFFFF);
             await interaction.update({ embeds: [embed] });
         } else if (type === 'premium') {
@@ -1274,7 +1392,7 @@ client.on('messageCreate', async message => {
     const command = args.shift().toLowerCase();
 
     // Prefix aliases for the public slash commands.
-    if (['help', 'daily', 'balance', 'leaderboard', 'transfer', 'obfuscate', 'minify'].includes(command)) {
+    if (['help', 'daily', 'balance', 'leaderboard', 'transfer', 'obfuscate', 'minify', 'envlog'].includes(command)) {
         const data = loadData();
         const uid = message.author.id;
         if ((data.blacklist || []).includes(uid)) { await message.reply('❌ You are blacklisted from using this bot.'); return; }
@@ -1282,7 +1400,11 @@ client.on('messageCreate', async message => {
             const helpEmbed = new EmbedBuilder()
                 .setColor(0xFFFFFF)
                 .setTitle('Help Menu')
-                .setDescription(`**Slash Commands**\n/help\n/daily\n/balance\n/leaderboard\n/transfer <amount> <@user>\n/obfuscate <code> or <file> or <url>\n/minify <code> or <file> or <url>\n\n**Prefix Commands**\n.help\n.daily\n.balance\n.leaderboard\n.transfer <amount> <@user>\n.obfuscate <code> or <file> or <url>\n.minify <code> or <file> or <url>`);
+                .setDescription(`**Slash Commands**\n/help\n/daily\n/balance\n/leaderboard\n/transfer <amount> <@user>\n/obfuscate <code> or <file> or <url>\n/minify <code> or <file> or <url>
+/envlog <code> or <file>
+
+**Prefix Commands**\n.help\n.daily\n.balance\n.leaderboard\n.transfer <amount> <@user>\n.obfuscate <code> or <file> or <url>\n.minify <code> or <file> or <url>
+.envlog <code> or attached file`);
             const helpButtons = new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId(`help_commands_${uid}`).setLabel('Commands').setStyle(ButtonStyle.Primary),
                 new ButtonBuilder().setCustomId(`help_owner_${uid}`).setLabel('Owner Only').setStyle(ButtonStyle.Secondary),
@@ -1311,6 +1433,40 @@ client.on('messageCreate', async message => {
             if (ud.users[uid].credits < amount) { await message.reply('❌ Not enough credits.'); return; }
             ud.users[uid].credits -= amount; ud.users[target.id].credits = Math.min(MAX_CREDITS, ud.users[target.id].credits + amount); saveData(ud);
             await message.reply(`💸 Transferred **${amount} credits** to ${target}.`); return;
+        }
+        if (command === 'envlog') {
+            const attachment = message.attachments.first();
+            let source = args.join(' ').trim();
+            if (!source && !attachment) {
+                await message.reply('Usage: `.envlog <Lua/Luau source>` or attach a `.lua`/`.luau` file. Static scan only; source is never executed.');
+                return;
+            }
+            if (attachment) {
+                if (attachment.size > 1000000) { await message.reply('❌ File too large. Maximum supported size is 1 MB.'); return; }
+                try {
+                    const response = await fetch(attachment.url, { signal: AbortSignal.timeout(12000) });
+                    if (!response.ok) throw new Error('Download failed');
+                    source = await response.text();
+                } catch (_) { await message.reply('❌ Could not read that attachment.'); return; }
+            }
+            if (!source.trim() || Buffer.byteLength(source, 'utf8') > 1000000) {
+                await message.reply('❌ Source is empty or larger than 1 MB.');
+                return;
+            }
+            const result = analyzeLuaEnvironment(source);
+            const totalFindings = Object.values(result.counts).reduce((sum, count) => sum + count, 0) + result.urlCount;
+            const reportFile = new AttachmentBuilder(Buffer.from(result.report, 'utf8'), { name: 'hyperion_envlog_report.txt' });
+            const embed = new EmbedBuilder()
+                .setTitle('🔎 Static Environment Scan')
+                .setColor(0xFFFFFF)
+                .setDescription('Source was **not executed**. The report lists heuristic references found in the text.')
+                .addFields(
+                    { name: 'Lines', value: String(result.lineCount), inline: true },
+                    { name: 'Findings', value: String(totalFindings), inline: true },
+                    { name: 'URLs', value: String(result.urlCount), inline: true }
+                );
+            await message.reply({ embeds: [embed], files: [reportFile], allowedMentions: { parse: [] } });
+            return;
         }
         if (command === 'obfuscate' || command === 'minify') {
             const input = args.join(' ').trim() || message.attachments.first()?.url;
