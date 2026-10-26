@@ -1,16 +1,18 @@
 {
-  "name": "hyperion-discord-bot",
-  "version": "1.0.0",
-  "private": true,
-  "description": "Hyperion Discord bot",
-  "main": "index.js",
-  "scripts": {
-    "start": "node index.js"
-  },
-  "engines": {
-    "node": ">=20.0.0"
-  },
-  "dependencies": {
-    "discord.js": "^14.19.3"
-  }
+"name": "hyperion-deobfuscator-bot",
+"version": "1.0.0",
+"description": "Hyperion Lua/Luau Deobfuscator Discord Bot",
+"main": "index.js",
+"type": "commonjs",
+"scripts": {
+"start": "node index.js",
+"check": "node --check index.js && node --check src/detector.js && node --check src/backends.js"
+},
+"engines": {
+"node": ">=18"
+},
+"dependencies": {
+"discord.js": "^14.27.0",
+"dotenv": "^16.6.1"
+}
 }
