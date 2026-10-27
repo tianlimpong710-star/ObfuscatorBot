@@ -1,4 +1,4 @@
-# Hyperion Deobfuscator Bot
+# 𝙱𝚕𝚊𝚣𝚎𝚁™ Deobfuscator Bot
 
 Discord prefix bot wrapper for three separate upstream backends. Use only on Lua/Luau code you own or are authorized to analyze.
 
