@@ -1,0 +1,69 @@
+
+function detectLuraphVersion(source) {
+  const text = String(source || "");
+
+  const match = text.match(
+    /Luraph\s+Obfuscator\s+v?(14\.7|14\.8|14\.9|15(?:\.0)?)/i
+  );
+
+  if (match) {
+    return {
+      type: "luraph",
+      version: match[1].startsWith("15") ? "15" : match[1]
+    };
+  }
+
+  // Recognize likely Luraph samples even when the version is not visible.
+  if (/Luraph|LPH_ENCSTR|LPH_CRASH|LPH_NO_VIRTUALIZE/i.test(text)) {
+    return {
+      type: "luraph",
+      version: "unknown"
+    };
+  }
+
+  return null;
+}
+
+function detectPrometheus(source) {
+  const text = String(source || "");
+
+  return /Prometheus\s+Obfuscator|--\s*Prometheus/i.test(text);
+}
+
+function detectMoonsec(source) {
+  const text = String(source || "");
+
+  // Prefer explicit markers where present.
+  if (/MoonSec\s*(?:V|v)?3|MoonSec\s+Obfuscator/i.test(text)) {
+    return true;
+  }
+
+  // Heuristic fallback; this can produce false positives or false negatives.
+  return (
+    /bit32\.(?:bxor|band|bor|bnot)/i.test(text) &&
+    /loadstring|setfenv|unpack/i.test(text) &&
+    /string\.char|string\.byte/i.test(text)
+  );
+}
+
+function detectAny(source) {
+  const luraph = detectLuraphVersion(source);
+  if (luraph) return luraph;
+
+  if (detectPrometheus(source)) {
+    return { type: "prometheus" };
+  }
+
+  if (detectMoonsec(source)) {
+    return { type: "moonsec" };
+  }
+
+  return null;
+}
+
+module.exports = {
+  detectLuraphVersion,
+  detectPrometheus,
+  detectMoonsec,
+  detectAny
+};
