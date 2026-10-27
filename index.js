@@ -20,8 +20,8 @@ const {
   detectPrometheus,
   detectMoonsec,
   detectAny
-} = require("./src/detector");
-const { deobfuscate } = require("./src/backends");
+} = require("./detector");
+const { deobfuscate } = require("./backends");
 
 const TOKEN = process.env.DISCORD_TOKEN;
 const PREFIX = process.env.PREFIX || ".";
