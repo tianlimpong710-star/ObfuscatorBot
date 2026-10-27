@@ -10,7 +10,7 @@ Discord prefix bot wrapper for three separate upstream backends. Use only on Lua
 - `.msec` — MoonSec V3 only
 - `.help` — help panel
 
-Attach a `.lua`, `.luau` or `.txt` file, or paste source after the command. Set the Discord **Message Content Intent** in the Developer Portal.
+Attach a `.lua`, `.luau` or `.txt` file, paste source after the command, or provide a supported HTTPS URL. URL hosts supported by the fetcher: GitHub, Pastebin, Pastefy, Rubis API and PasteBDN. URL downloads are capped at 99,999 KB (streaming limit; redirects are revalidated). Set the Discord **Message Content Intent** in the Developer Portal.
 
 ## Railway deployment
 
@@ -20,7 +20,7 @@ Attach a `.lua`, `.luau` or `.txt` file, or paste source after the command. Set 
    - `DISCORD_TOKEN` — your bot token
    - `MAINTAINER_ID` — your Discord user ID
    - `PREFIX` — `.`
-   - `MAX_SOURCE_MB` — `1.5`
+   - `MAX_SOURCE_KB` — `99999` (maximum source size for pasted code, attachments and URL downloads)
    - `BACKEND_TIMEOUT_MS` — `180000`
 4. Read **Build Logs** and **Deploy Logs** after the first deployment.
 
@@ -36,6 +36,10 @@ Do not commit `.env` or share your bot token.
 - Luraph v15.1 is not supported by the selected public backend.
 - Obfuscator detection is heuristic; unknown or heavily modified samples may be misidentified. Deobfuscation is best-effort and may not reproduce original source.
 - Uploaded Lua/Luau source is never run by this Discord wrapper. Backends are invoked as child processes, but treat untrusted inputs cautiously.
+
+## Detection checks
+
+Run `npm run check`. The included unit tests verify the detector against the supplied Luraph v14.7, v14.8, v14.9 and v15.0 samples, plus synthetic Prometheus/MoonSec headers and ordinary Lua. Detection is heuristic and does not prove a backend can successfully deobfuscate every sample.
 
 ## Local checks
 

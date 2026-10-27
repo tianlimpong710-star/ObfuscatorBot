@@ -20,14 +20,17 @@ const {
   detectPrometheus,
   detectMoonsec,
   detectAny
-} = require("./detector");
-const { deobfuscate } = require("./backends");
+} = require("./src/detector");
+const { deobfuscate } = require("./src/backends");
+const { fetchSourceFromUrl } = require("./src/url-source");
 
 const TOKEN = process.env.DISCORD_TOKEN;
 const PREFIX = process.env.PREFIX || ".";
 const MAINTAINER_ID = process.env.MAINTAINER_ID || "127894961235";
-const MAX_BYTES =
-  Math.max(0.1, Number(process.env.MAX_SOURCE_MB || 1.5)) * 1024 * 1024;
+const MAX_BYTES = process.env.MAX_SOURCE_KB
+  ? Math.max(1, Number(process.env.MAX_SOURCE_KB)) * 1024
+  : Math.max(0.1, Number(process.env.MAX_SOURCE_MB || 1.5)) * 1024 * 1024;
+const URL_MAX_BYTES = 99999 * 1024;
 const GIF_URL =
   "https://cdn.imageurlgenerator.com/uploads/f7af7a46-43d6-4f70-89c0-b4ff901382a0.gif";
 
@@ -75,7 +78,7 @@ async function getSource(message, argsText) {
 
     if (attachment.size > MAX_BYTES) {
       throw new Error(
-        `File too large. Maximum size: ${(MAX_BYTES / 1024 / 1024).toFixed(1)} MB.`
+        `File too large. Maximum size: ${(MAX_BYTES / 1024).toFixed(0)} KB.`
       );
     }
 
@@ -98,6 +101,10 @@ async function getSource(message, argsText) {
 
   const source = argsText.trim();
 
+  if (/^https:\/\//i.test(source) && !/\s/.test(source)) {
+    return fetchSourceFromUrl(source, URL_MAX_BYTES);
+  }
+
   if (!source) {
     throw new Error(
       `Attach a .lua/.luau/.txt file or paste code after ${PREFIX}${"deobf"}.`
@@ -106,7 +113,7 @@ async function getSource(message, argsText) {
 
   if (Buffer.byteLength(source, "utf8") > MAX_BYTES) {
     throw new Error(
-      `Code too large. Maximum size: ${(MAX_BYTES / 1024 / 1024).toFixed(1)} MB.`
+      `Code too large. Maximum size: ${(MAX_BYTES / 1024).toFixed(0)} KB.`
     );
   }
 

@@ -7,7 +7,7 @@
   "type": "commonjs",
   "scripts": {
     "start": "node index.js",
-    "check": "node --check index.js && node --check src/detector.js && node --check src/backends.js"
+    "check": "node --check index.js && node --check src/detector.js && node --check src/backends.js && node --check src/url-source.js && node --test test/*.test.js"
   },
   "engines": {
     "node": ">=20"
